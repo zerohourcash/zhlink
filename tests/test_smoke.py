@@ -400,6 +400,11 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "WaitNextBlockError",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
+                "async_force_refresh_balance",
+                "async_get_balance",
+                "async_send_to_contract",
+                "async_send_usdz_gas_free",
+                "async_send_zhc",
                 "call_contract",
                 "create_address",
                 "create_wallet",
@@ -419,6 +424,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "send_zhc",
                 "validate_bip39_mnemonic",
                 "wait_for_next_block",
+                "watch_balance",
                 "write_mass_send_template",
             ],
         )
@@ -427,6 +433,8 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.send_to_contract))
         self.assertTrue(callable(zhlink.send_mass))
         self.assertTrue(callable(zhlink.get_mass_send_template))
+        self.assertTrue(callable(zhlink.async_get_balance))
+        self.assertTrue(callable(zhlink.watch_balance))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -600,6 +608,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             repo / "examples" / "send_to_contract.py",
             repo / "examples" / "simple_send_zhc.py",
             repo / "examples" / "simple_send_usdz_gas_free.py",
+            repo / "examples" / "watch_deposit_and_forward_usdz.py",
         ]:
             completed = subprocess.run(
                 [sys.executable, str(script)],

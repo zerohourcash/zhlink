@@ -215,6 +215,25 @@ def get_balance(
     ).as_dict()
 
 
+async def async_get_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Async version of ``get_balance``."""
+
+    return (
+        await _get_balance_async(
+            address,
+            config=config,
+            tokens=tokens,
+            token_decimals=token_decimals,
+        )
+    ).as_dict()
+
+
 def force_refresh_balance(
     address: str,
     *,
@@ -237,6 +256,76 @@ def force_refresh_balance(
             force_refresh=True,
         )
     ).as_dict()
+
+
+async def async_force_refresh_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Async version of ``force_refresh_balance``."""
+
+    return (
+        await _get_balance_async(
+            address,
+            config=config,
+            tokens=tokens,
+            token_decimals=token_decimals,
+            force_refresh=True,
+        )
+    ).as_dict()
+
+
+async def watch_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+    emit_initial: bool = True,
+):
+    """Yield balance snapshots with WSS-first updates and HTTP/RPC fallback."""
+
+    from .rpc import ZHCashRPC
+
+    cfg = config or ZHLinkConfig()
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    client = ZHCashRPC(cfg)
+
+    async def on_update(_address: str, _snapshot: dict[str, Any]) -> None:
+        try:
+            balance = await _get_balance_async(
+                address,
+                config=cfg,
+                tokens=tokens,
+                token_decimals=token_decimals,
+                force_refresh=True,
+            )
+            await queue.put(balance.as_dict())
+        except Exception as exc:
+            await queue.put({"address": address, "status": "error", "reason": str(exc)})
+
+    unsubscribe = client.subscribe_balance(address, on_update)
+    await client.start_block_watch()
+    try:
+        if emit_initial:
+            await queue.put(
+                (
+                    await _get_balance_async(
+                        address,
+                        config=cfg,
+                        tokens=tokens,
+                        token_decimals=token_decimals,
+                    )
+                ).as_dict()
+            )
+        while True:
+            yield await queue.get()
+    finally:
+        unsubscribe()
+        await client.close()
 
 
 def get_cached_balance(
@@ -289,6 +378,18 @@ def send_zhc(
     """
 
     return _run(_send_zhc_async(private_key_wif, to_address, amount, config=config))
+
+
+async def async_send_zhc(
+    private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any]:
+    """Async version of ``send_zhc``."""
+
+    return await _send_zhc_async(private_key_wif, to_address, amount, config=config)
 
 
 def _http_json(method: str, url: str, payload: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
@@ -582,6 +683,33 @@ def send_to_contract(
     )
 
 
+async def async_send_to_contract(
+    private_key_wif: str,
+    contract_address: str,
+    data_hex: str = "",
+    *,
+    amount: str | int | float | Decimal = "0",
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+    require_bool_success: bool = False,
+    service_fee: str | int | float | Decimal | None = None,
+    selection_buffer: str | int | float | Decimal | None = None,
+) -> dict[str, Any]:
+    """Async version of ``send_to_contract``."""
+
+    return await _send_to_contract_async(
+        private_key_wif,
+        contract_address,
+        data_hex,
+        amount=amount,
+        gas=gas,
+        config=config,
+        require_bool_success=require_bool_success,
+        service_fee=service_fee,
+        selection_buffer=selection_buffer,
+    )
+
+
 def _testmempoolaccept(config: ZHLinkConfig, rawtx: str) -> dict[str, Any]:
     try:
         result = _rpc_call(config, "testmempoolaccept", [[rawtx], False])
@@ -710,10 +838,45 @@ def send_usdz_gas_free(
     return result
 
 
+async def async_send_usdz_gas_free(
+    sender_private_key_wif: str,
+    admin_private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    config: ZHLinkConfig | None = None,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+    broadcast: bool = True,
+    max_attempts: int = 5,
+) -> dict[str, Any]:
+    """Async wrapper around ``send_usdz_gas_free``.
+
+    The underlying raw transaction engine is synchronous and deterministic, so
+    this wrapper runs it in a worker thread to avoid blocking the event loop.
+    """
+
+    return await asyncio.to_thread(
+        send_usdz_gas_free,
+        sender_private_key_wif,
+        admin_private_key_wif,
+        to_address,
+        amount,
+        config=config,
+        store_path=store_path,
+        broadcast=broadcast,
+        max_attempts=max_attempts,
+    )
+
+
 __all__ = [
     "Balance",
     "ZHLinkConfig",
     "admin_gas_wallet_info",
+    "async_force_refresh_balance",
+    "async_get_balance",
+    "async_send_to_contract",
+    "async_send_usdz_gas_free",
+    "async_send_zhc",
     "call_contract",
     "create_address",
     "force_refresh_balance",
@@ -722,4 +885,5 @@ __all__ = [
     "send_to_contract",
     "send_zhc",
     "send_usdz_gas_free",
+    "watch_balance",
 ]

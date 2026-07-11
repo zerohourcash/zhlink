@@ -4,6 +4,11 @@ from . import _rawtx_bridge  # noqa: F401
 from .api import (
     Balance,
     admin_gas_wallet_info,
+    async_force_refresh_balance,
+    async_get_balance,
+    async_send_to_contract,
+    async_send_usdz_gas_free,
+    async_send_zhc,
     call_contract,
     create_address,
     create_wallet,
@@ -13,6 +18,7 @@ from .api import (
     send_to_contract,
     send_zhc,
     send_usdz_gas_free,
+    watch_balance,
 )
 from .config import (
     ZHLinkConfig,
@@ -46,6 +52,11 @@ __all__ = [
     "MassRecipient",
     "MassSendPlan",
     "admin_gas_wallet_info",
+    "async_force_refresh_balance",
+    "async_get_balance",
+    "async_send_to_contract",
+    "async_send_usdz_gas_free",
+    "async_send_zhc",
     "call_contract",
     "create_address",
     "create_wallet",
@@ -65,5 +76,6 @@ __all__ = [
     "send_zhc",
     "validate_bip39_mnemonic",
     "wait_for_next_block",
+    "watch_balance",
     "write_mass_send_template",
 ]

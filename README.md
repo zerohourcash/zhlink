@@ -13,6 +13,10 @@ The public API is intentionally small:
 - send USDZ with admin-paid ZHC gas;
 - optionally read extra ZRC-20 token balances.
 
+The library is async-first for long-running wallet apps: WSS is used as the
+primary realtime signal and automatically falls back to HTTP/RPC polling when
+WSS is unavailable. Synchronous wrappers are still provided for simple scripts.
+
 The raw transaction engine is bundled inside the package. Normal users only
 import `zhlink`.
 
@@ -176,20 +180,21 @@ For a Python wallet UI, use the async client and subscribe to address updates:
 
 ```python
 import asyncio
-from zhlink.rpc import ZHCashRPC
+from zhlink import watch_balance
 
 async def main():
-    client = ZHCashRPC()
-
-    def on_balance(address, snapshot):
-        print(address, snapshot["zhc"], snapshot.get("height"))
-
-    client.subscribe_balance("Z...", on_balance)
-    await client.start_block_watch()
-    await asyncio.sleep(3600)
-    await client.close()
+    async for balance in watch_balance("Z..."):
+        print(balance["address"], balance["zhc"], balance["usdz"])
 
 asyncio.run(main())
+```
+
+For one-shot scripts, use the sync wrappers:
+
+```python
+from zhlink import get_balance, send_zhc
+
+print(get_balance("Z..."))
 ```
 
 Realtime detection uses the best available channel:
@@ -237,6 +242,24 @@ or RPC is temporarily unavailable, the library can still read the last known
 UTXO set and show useful wallet state. Real sends still use the normal safety
 pipeline: local UTXO reservation, dry-run when available, ZeroScan broadcast,
 then RPC broadcast fallback.
+
+### Watch a USDZ deposit and forward it gas-free
+
+The example below creates a fresh USDZ receiving address, watches it through the
+shared WSS hub, and forwards the detected USDZ to the admin address with
+`send_usdz_gas_free()`. It is guarded by default so it cannot accidentally wait
+or send during smoke tests.
+
+```bash
+RUN_WATCH_EXAMPLE=1 \
+RUN_REAL_SEND=1 \
+ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
+ZHLINK_ADMIN_ADDRESS="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi" \
+python examples/watch_deposit_and_forward_usdz.py
+```
+
+Without `RUN_REAL_SEND=1`, the example builds the gas-free transaction but does
+not broadcast it.
 
 ## Send ZHC
 
