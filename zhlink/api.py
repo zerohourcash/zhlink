@@ -454,72 +454,6 @@ async def async_send_zhc(
     return await _send_zhc_async(private_key_wif, to_address, amount, config=config)
 
 
-def send(
-    *,
-    asset: str,
-    private_key_wif: str,
-    to_address: str,
-    amount: str | int | float | Decimal,
-    config: ZHLinkConfig | None = None,
-    admin_private_key_wif: str | None = None,
-    broadcast: bool = True,
-    store_path: str | Path = ".zhlink-gasfree-utxos.json",
-) -> dict[str, Any]:
-    """Generic send dispatcher.
-
-    Use ``send_zhc()`` for explicit native ZHC sends. Use this helper when your
-    application receives an asset name dynamically.
-    """
-
-    normalized_asset = asset.strip().upper()
-    if normalized_asset == "ZHC":
-        return send_zhc(private_key_wif, to_address, amount, config=config)
-    if normalized_asset == "USDZ":
-        if not admin_private_key_wif:
-            raise ValueError("admin_private_key_wif is required for USDZ gas-free sends")
-        return send_usdz_gas_free(
-            sender_private_key_wif=private_key_wif,
-            admin_private_key_wif=admin_private_key_wif,
-            to_address=to_address,
-            amount=amount,
-            config=config,
-            broadcast=broadcast,
-            store_path=store_path,
-        )
-    raise ValueError("unsupported asset. Use asset='ZHC' or asset='USDZ'")
-
-
-async def async_send(
-    *,
-    asset: str,
-    private_key_wif: str,
-    to_address: str,
-    amount: str | int | float | Decimal,
-    config: ZHLinkConfig | None = None,
-    admin_private_key_wif: str | None = None,
-    broadcast: bool = True,
-    store_path: str | Path = ".zhlink-gasfree-utxos.json",
-) -> dict[str, Any]:
-    """Async generic send dispatcher."""
-
-    normalized_asset = asset.strip().upper()
-    if normalized_asset == "ZHC":
-        return await async_send_zhc(private_key_wif, to_address, amount, config=config)
-    if normalized_asset == "USDZ":
-        if not admin_private_key_wif:
-            raise ValueError("admin_private_key_wif is required for USDZ gas-free sends")
-        return await async_send_usdz_gas_free(
-            sender_private_key_wif=private_key_wif,
-            admin_private_key_wif=admin_private_key_wif,
-            to_address=to_address,
-            amount=amount,
-            config=config,
-            broadcast=broadcast,
-            store_path=store_path,
-        )
-    raise ValueError("unsupported asset. Use asset='ZHC' or asset='USDZ'")
-
-
 def _http_json(method: str, url: str, payload: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
     data = None
     headers = {"accept": "application/json"}
@@ -862,6 +796,88 @@ async def async_send_to_contract(
     )
 
 
+async def _send_zrc20_token_async(
+    private_key_wif: str,
+    token_contract: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any]:
+    from .rpc import ZHCashRPC
+
+    cfg = config or ZHLinkConfig()
+    from_address = _address_from_wif(private_key_wif)
+    contract = _normalize_hex(token_contract, field="token_contract")
+    client = ZHCashRPC(cfg)
+    try:
+        result = await client.send_token(
+            contract_address=contract,
+            from_address=from_address,
+            to_address=to_address,
+            amount_or_id=float(Decimal(str(amount))),
+            private_key=private_key_wif,
+            gas=int(gas),
+        )
+        result.setdefault("from_address", from_address)
+        result.setdefault("to_address", to_address)
+        result.setdefault("token_contract", contract)
+        result.setdefault("amount", str(amount))
+        result.setdefault("gas", int(gas))
+        return result
+    finally:
+        await client.close()
+
+
+def send_zrc20_token(
+    private_key_wif: str,
+    token_contract: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any]:
+    """Send any ZRC-20 token by contract address.
+
+    For native ZHC use ``send_zhc()``. For USDZ with admin-paid gas use
+    ``send_usdz_free()``.
+    """
+
+    return _run(
+        _send_zrc20_token_async(
+            private_key_wif,
+            token_contract,
+            to_address,
+            amount,
+            gas=gas,
+            config=config,
+        )
+    )
+
+
+async def async_send_zrc20_token(
+    private_key_wif: str,
+    token_contract: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any]:
+    """Async version of ``send_zrc20_token``."""
+
+    return await _send_zrc20_token_async(
+        private_key_wif,
+        token_contract,
+        to_address,
+        amount,
+        gas=gas,
+        config=config,
+    )
+
+
 def _testmempoolaccept(config: ZHLinkConfig, rawtx: str) -> dict[str, Any]:
     try:
         result = _rpc_call(config, "testmempoolaccept", [[rawtx], False])
@@ -1099,11 +1115,11 @@ __all__ = [
     "async_force_refresh_balance",
     "async_get_balance",
     "async_new_wallet",
-    "async_send",
     "async_send_to_contract",
     "async_send_usdz_gas_free",
     "async_send_usdz_free",
     "async_send_zhc",
+    "async_send_zrc20_token",
     "balance",
     "call_contract",
     "create_address",
@@ -1111,10 +1127,10 @@ __all__ = [
     "get_cached_balance",
     "get_balance",
     "new_wallet",
-    "send",
     "send_to_contract",
     "send_zhc",
     "send_usdz_gas_free",
     "send_usdz_free",
+    "send_zrc20_token",
     "watch_balance",
 ]

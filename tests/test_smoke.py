@@ -484,12 +484,12 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "async_next_seed_wallet",
                 "async_prepare_mass_send_utxos",
                 "async_restore_seed_wallet",
-                "async_send",
                 "async_send_mass",
                 "async_send_to_contract",
                 "async_send_usdz_free",
                 "async_send_usdz_gas_free",
                 "async_send_zhc",
+                "async_send_zrc20_token",
                 "async_wait_for_next_block",
                 "async_wait_for_usdz_deposit",
                 "balance",
@@ -521,12 +521,12 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "restore_seed_wallet",
                 "run_usdz_receiver",
                 "save_zhc_seed_config",
-                "send",
                 "send_mass",
                 "send_to_contract",
                 "send_usdz_free",
                 "send_usdz_gas_free",
                 "send_zhc",
+                "send_zrc20_token",
                 "usdz_receiver_status",
                 "validate_bip39_mnemonic",
                 "wait_for_next_block",
@@ -540,7 +540,6 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.async_new_wallet))
         self.assertTrue(callable(zhlink.balance))
         self.assertTrue(callable(zhlink.async_balance))
-        self.assertTrue(callable(zhlink.send))
         self.assertTrue(callable(zhlink.call_contract))
         self.assertTrue(callable(zhlink.async_call_contract))
         self.assertTrue(callable(zhlink.admin_gas_wallet_info))
@@ -572,6 +571,10 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.async_restore_seed_wallet))
         self.assertTrue(callable(zhlink.send_usdz_free))
         self.assertTrue(callable(zhlink.async_send_usdz_free))
+        self.assertTrue(callable(zhlink.send_zrc20_token))
+        self.assertTrue(callable(zhlink.async_send_zrc20_token))
+        self.assertFalse(hasattr(zhlink, "send"))
+        self.assertFalse(hasattr(zhlink, "async_send"))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -598,16 +601,13 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             self.assertEqual(wallet.address, restored.address)
             self.assertEqual(wallet.private_key_wif, restored.private_key_wif)
 
-    def test_generic_send_is_explicit_and_does_not_replace_send_zhc(self) -> None:
+    def test_send_methods_are_explicit(self) -> None:
         import zhlink
 
-        self.assertIsNot(zhlink.send, zhlink.send_zhc)
-        with self.assertRaises(TypeError):
-            zhlink.send("L...", "Z...", "1")  # type: ignore[misc]
-        with self.assertRaises(ValueError):
-            zhlink.send(asset="DOGE", private_key_wif="L...", to_address="Z...", amount="1")
-        with self.assertRaises(ValueError):
-            zhlink.send(asset="USDZ", private_key_wif="L...", to_address="Z...", amount="1")
+        self.assertTrue(callable(zhlink.send_zhc))
+        self.assertTrue(callable(zhlink.send_usdz_free))
+        self.assertTrue(callable(zhlink.send_zrc20_token))
+        self.assertFalse(hasattr(zhlink, "send"))
 
     def test_config_defaults_are_exported(self) -> None:
         cfg = ZHLinkConfig.public_network()

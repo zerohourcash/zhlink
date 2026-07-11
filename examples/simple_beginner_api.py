@@ -14,9 +14,11 @@ BALANCE_ADDRESS = "Z..."
 PRIVATE_KEY_WIF = "L..."
 ADMIN_GAS_PRIVATE_KEY_WIF = "K..."
 TO_ADDRESS = "Z..."
+ZRC20_TOKEN_CONTRACT = "a48d0ee7365ce1add8e595de4d54344239f8ca28"
 
 AMOUNT_ZHC = "1"
 AMOUNT_USDZ = "0.1"
+AMOUNT_ZRC20 = "0.1"
 
 
 def create_wallet_example() -> None:
@@ -74,26 +76,34 @@ def send_zhc_example() -> None:
     pprint(zhlink.send_zhc(PRIVATE_KEY_WIF, TO_ADDRESS, AMOUNT_ZHC))
 
 
-def generic_send_example() -> None:
-    print("\n5. Use generic send(asset=...) when the asset is dynamic")
+def send_zrc20_token_example() -> None:
+    print("\n5. Send a ZRC-20 token by contract address")
     if PRIVATE_KEY_WIF == "L..." or TO_ADDRESS == "Z...":
         pprint(
             {
                 "ready": False,
                 "reason": "Edit PRIVATE_KEY_WIF and TO_ADDRESS.",
-                "method": "zhlink.send(asset='ZHC', ...)",
+                "method": "zhlink.send_zrc20_token(...)",
             }
         )
         return
     if not FLAG_SEND_REAL_TX:
-        pprint({"dry_run": True, "asset": "ZHC", "to_address": TO_ADDRESS, "amount": AMOUNT_ZHC})
+        pprint(
+            {
+                "dry_run": True,
+                "asset": "ZRC-20",
+                "token_contract": ZRC20_TOKEN_CONTRACT,
+                "to_address": TO_ADDRESS,
+                "amount": AMOUNT_ZRC20,
+            }
+        )
         return
     pprint(
-        zhlink.send(
-            asset="ZHC",
+        zhlink.send_zrc20_token(
             private_key_wif=PRIVATE_KEY_WIF,
+            token_contract=ZRC20_TOKEN_CONTRACT,
             to_address=TO_ADDRESS,
-            amount=AMOUNT_ZHC,
+            amount=AMOUNT_ZRC20,
         )
     )
 
@@ -133,6 +143,9 @@ async def async_examples() -> None:
             "async_wallet": wallet.address,
             "async_seed_wallet": first.address,
             "async_restored_wallet": restored.address,
+            "async_send_zhc_method": "await zhlink.async_send_zhc(...)",
+            "async_send_zrc20_method": "await zhlink.async_send_zrc20_token(...)",
+            "async_send_usdz_free_method": "await zhlink.async_send_usdz_free(...)",
         }
     )
 
@@ -142,7 +155,7 @@ def main() -> None:
     seed_wallet_example()
     balance_example()
     send_zhc_example()
-    generic_send_example()
+    send_zrc20_token_example()
     send_usdz_free_example()
     asyncio.run(async_examples())
 

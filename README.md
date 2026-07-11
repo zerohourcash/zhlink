@@ -1,6 +1,6 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/badge/PyPI-0.1.27-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/badge/PyPI-0.1.28-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
@@ -9,6 +9,7 @@ It is designed so a beginner can start with a few functions:
 - `new_wallet()` - create a local ZHC wallet;
 - `balance(address)` - read ZHC and USDZ balance;
 - `send_zhc(private_key_wif, to_address, amount)` - send native ZHC;
+- `send_zrc20_token(private_key_wif, token_contract, to_address, amount)` - send a ZRC-20 token;
 - `send_usdz_free(sender_key, admin_gas_key, to_address, amount)` - send USDZ with admin-paid ZHC gas;
 - `new_seed_config()` and `next_seed_wallet()` - derive many ZHC wallets from one BIP39 seed.
 
@@ -140,21 +141,21 @@ print(result)
 
 Use `send_zhc()` when you know you are sending native ZHC.
 
-There is also a generic dispatcher for dynamic asset names:
+### Send a ZRC-20 Token
 
 ```python
 import zhlink
 
-result = zhlink.send(
-    asset="ZHC",
+result = zhlink.send_zrc20_token(
     private_key_wif="L...",
+    token_contract="a48d0ee7365ce1add8e595de4d54344239f8ca28",
     to_address="Z...",
-    amount="1.25",
+    amount="0.1",
 )
 ```
 
-`send()` requires the `asset` keyword on purpose. It does not replace
-`send_zhc()`.
+For native ZHC use `send_zhc()`. For USDZ with admin-paid gas use
+`send_usdz_free()`.
 
 ### Send USDZ With Admin-Paid Gas
 
@@ -224,8 +225,8 @@ Common sync/async pairs:
 
 - `new_wallet()` / `async_new_wallet()`;
 - `balance()` / `async_balance()`;
-- `send()` / `async_send()`;
 - `send_zhc()` / `async_send_zhc()`;
+- `send_zrc20_token()` / `async_send_zrc20_token()`;
 - `send_usdz_free()` / `async_send_usdz_free()`;
 - `new_seed_config()` / `async_new_seed_config()`;
 - `next_seed_wallet()` / `async_next_seed_wallet()`;
@@ -772,7 +773,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.27`
+Current package version: `0.1.28`
 
 Release flow:
 
