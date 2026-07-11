@@ -1,0 +1,12 @@
+{
+  "asset": "USDZ",
+  "token_contract": "a48d0ee7365ce1add8e595de4d54344239f8ca28",
+  "token_decimals": 8,
+  "gas": 1000000,
+  "recipients": [
+    {
+      "address": "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
+      "amount": "0.1"
+    }
+  ]
+}

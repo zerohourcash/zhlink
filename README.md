@@ -9,6 +9,7 @@ The public API is intentionally small:
 - send native ZHC from a private key;
 - dry-run/read ZHCASH smart contracts with `callcontract`;
 - send payable ZHCASH smart-contract calls from a private key;
+- send ZHC, USDZ or any ZRC-20 token to many recipients from a JSON plan;
 - send USDZ with admin-paid ZHC gas;
 - optionally read extra ZRC-20 token balances.
 
@@ -141,6 +142,73 @@ The sender address is derived locally. The function runs `callcontract`
 preflight, selects UTXO, signs locally, checks mempool when RPC is available,
 broadcasts through ZeroScan and falls back to RPC broadcast.
 
+## Mass Send
+
+`send_mass` sends ZHC, USDZ or any ZRC-20 token to many recipients from a JSON
+plan.
+
+```json
+{
+  "asset": "USDZ",
+  "token_contract": "a48d0ee7365ce1add8e595de4d54344239f8ca28",
+  "token_decimals": 8,
+  "gas": 1000000,
+  "recipients": [
+    {"address": "Z...", "amount": "0.1"},
+    {"address": "Z...", "amount": "0.2"}
+  ]
+}
+```
+
+For native ZHC:
+
+```json
+{
+  "asset": "ZHC",
+  "recipients": [
+    {"address": "Z...", "amount": "1"}
+  ]
+}
+```
+
+Run an estimate first:
+
+```python
+from zhlink import estimate_mass_send, load_mass_send_plan
+
+plan = load_mass_send_plan("mass_send.json")
+print(estimate_mass_send("L...", plan))
+```
+
+Then send:
+
+```python
+from zhlink import send_mass
+
+result = send_mass("L...", "mass_send.json")
+print(result["sent_count"], result["failed_count"])
+```
+
+Mass-send UTXO rules:
+
+1. One recipient uses one on-chain transaction.
+2. The library never starts more transactions in one batch than confirmed UTXO
+   currently available.
+3. If there are too few UTXO and `auto_prepare_utxos=True`, the library splits
+   the largest UTXO into up to `100` self-outputs.
+4. Every prepared output must be at least `1 ZHC`.
+5. After a reorg/split, the library waits for the next block before mailing.
+6. Between mailing batches it waits for the next block so change outputs become
+   confirmed before being reused.
+
+Manual preparation is also available:
+
+```python
+from zhlink import prepare_mass_send_utxos
+
+prepare_mass_send_utxos("L...", "mass_send.json", target_utxos=100)
+```
+
 ## Send USDZ Gas-Free
 
 `send_usdz_gas_free` signs the USDZ transfer with the sender key and pays ZHC
@@ -214,6 +282,7 @@ PYTHONPATH=. python3 examples/create_wallet.py
 PYTHONPATH=. python3 examples/create_bip39_wallet.py
 PYTHONPATH=. ZHLINK_ADDRESS="Z..." python3 examples/check_balance.py
 PYTHONPATH=. python3 examples/send_to_contract.py
+PYTHONPATH=. python3 examples/mass_send.py
 ```
 
 Run all safe examples at once:
@@ -234,8 +303,8 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this

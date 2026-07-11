@@ -247,24 +247,32 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             [
                 "Balance",
                 "Bip39Wallet",
+                "MassRecipient",
+                "MassSendPlan",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
                 "call_contract",
                 "create_address",
                 "create_wallet",
                 "derive_bip39_zhc_wallet",
+                "estimate_mass_send",
                 "generate_bip39_mnemonic",
                 "generate_bip39_zhc_wallet",
                 "get_balance",
+                "load_mass_send_plan",
+                "prepare_mass_send_utxos",
+                "send_mass",
                 "send_to_contract",
                 "send_usdz_gas_free",
                 "send_zhc",
                 "validate_bip39_mnemonic",
+                "wait_for_next_block",
             ],
         )
         self.assertTrue(callable(zhlink.create_address))
         self.assertTrue(callable(zhlink.call_contract))
         self.assertTrue(callable(zhlink.send_to_contract))
+        self.assertTrue(callable(zhlink.send_mass))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -313,6 +321,87 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertEqual(result["gas_used"], 12345)
         self.assertEqual(result["output"], "0" * 63 + "1")
 
+    def test_mass_send_plan_and_utxo_estimate(self) -> None:
+        import zhlink.mass as mass
+
+        original_fetch = mass._fetch_zeroscan
+        plan = mass.load_mass_send_plan(
+            {
+                "asset": "ZHC",
+                "recipients": [
+                    {"address": RECIPIENT_ADDRESS, "amount": "1"},
+                    {"address": ADMIN_ADDRESS, "amount": "2"},
+                ],
+            }
+        )
+        self.assertEqual(plan.asset, "ZHC")
+        self.assertEqual(plan.required_tx_count, 2)
+
+        def fake_fetch(config, path):
+            return {
+                "utxos": [
+                    {
+                        "txid": "aa" * 32,
+                        "vout": 0,
+                        "value": 5_000_000_000,
+                        "scriptPubKey": ADMIN_SCRIPT,
+                        "confirmations": 10,
+                    }
+                ]
+            }
+
+        mass._fetch_zeroscan = fake_fetch
+        try:
+            estimate = mass.estimate_mass_send(ADMIN_WIF, plan)
+        finally:
+            mass._fetch_zeroscan = original_fetch
+        self.assertTrue(estimate["need_reorg"])
+        self.assertEqual(estimate["confirmed_utxo_count"], 1)
+
+    def test_prepare_mass_send_utxos_builds_split_without_broadcast(self) -> None:
+        import zhlink.mass as mass
+
+        original_fetch = mass._fetch_zeroscan
+        plan = mass.load_mass_send_plan(
+            {
+                "asset": "ZHC",
+                "recipients": [
+                    {"address": RECIPIENT_ADDRESS, "amount": "1"},
+                    {"address": ADMIN_ADDRESS, "amount": "1"},
+                    {"address": RECIPIENT_ADDRESS, "amount": "1"},
+                ],
+            }
+        )
+
+        def fake_fetch(config, path):
+            return {
+                "utxos": [
+                    {
+                        "txid": "bb" * 32,
+                        "vout": 1,
+                        "value": 10_000_000_000,
+                        "scriptPubKey": ADMIN_SCRIPT,
+                        "confirmations": 10,
+                    }
+                ]
+            }
+
+        mass._fetch_zeroscan = fake_fetch
+        try:
+            result = mass.prepare_mass_send_utxos(
+                ADMIN_WIF,
+                plan,
+                target_utxos=3,
+                broadcast=False,
+                wait_confirmation=False,
+            )
+        finally:
+            mass._fetch_zeroscan = original_fetch
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["action"], "split")
+        self.assertEqual(result["output_count"], 3)
+        self.assertTrue(result["built"]["rawtx"].startswith("0200000001"))
+
     def test_examples_use_public_zhlink_facade(self) -> None:
         repo = Path(__file__).resolve().parents[1]
         python_path = f"{repo}:{repo / 'zhc_rawtx'}"
@@ -335,6 +424,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         python_path = f"{repo}:{repo / 'zhc_rawtx'}"
         for script in [
             repo / "examples" / "send_zhc.py",
+            repo / "examples" / "mass_send.py",
             repo / "examples" / "send_to_contract.py",
             repo / "examples" / "simple_send_zhc.py",
             repo / "examples" / "simple_send_usdz_gas_free.py",
