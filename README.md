@@ -263,6 +263,15 @@ For a long-running receiver, use the high-level receiver API. Heavy work is
 handled inside the library: SQLite state, WSS watching, balance checks,
 gas-free forwarding, and optional cleanup.
 
+Public receiver controls:
+
+- `UsdzReceiverConfig` - one config object for admin wallet, limits, storage and realtime settings;
+- `create_and_forward_usdz_deposit(config)` - one-shot flow: create address, wait for USDZ, forward gas-free;
+- `run_usdz_receiver(action="status" | "new" | "delete" | "serve", ...)` - simple managed receiver runner;
+- `create_usdz_receiver_address(config)` - create one receiver address on demand;
+- `delete_usdz_receiver_address(address, config)` - remove a receiver address and its private key from local state;
+- `usdz_receiver_status(config)` - inspect receiver storage and active addresses.
+
 ```python
 from decimal import Decimal
 from pathlib import Path
