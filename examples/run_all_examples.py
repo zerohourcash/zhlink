@@ -11,6 +11,7 @@ ENV = {
 ALWAYS_RUN = [
     "create_wallet.py",
     "create_bip39_wallet.py",
+    "simple_beginner_api.py",
     "simple_create_address.py",
     "check_balance.py",
     "simple_balance.py",

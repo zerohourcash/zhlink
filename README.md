@@ -1,6 +1,6 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/badge/PyPI-0.1.26-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/badge/PyPI-0.1.27-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
@@ -739,6 +739,7 @@ Run examples one by one:
 ```bash
 cd /root/wallet/zhlink
 python3 examples/create_wallet.py
+python3 examples/simple_beginner_api.py
 python3 examples/create_bip39_wallet.py
 python3 examples/zhc_seed_addresses.py
 python3 examples/check_balance.py
@@ -771,7 +772,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.26`
+Current package version: `0.1.27`
 
 Release flow:
 
