@@ -213,9 +213,19 @@ receive realtime transaction events.
 Address subscriptions have a default lifetime of one hour. Every `getbalance`
 call or balance subscription touch extends that lifetime. If an address is not
 requested again, `zhlink` sends `unsubscribe` for that address so long-running
-wallet processes do not keep stale subscriptions forever. WSS is an accelerator,
-not a hard dependency: if it disconnects, cached state, ZeroScan HTTP and public
-RPC fallback continue to work.
+wallet processes do not keep stale subscriptions forever. For long-lived wallet
+sessions the TTL can be raised, for example to 12 hours:
+
+```python
+from zhlink import ZHLinkConfig
+
+config = ZHLinkConfig.public_network(
+    address_subscription_ttl_seconds=12 * 60 * 60,
+)
+```
+
+WSS is an accelerator, not a hard dependency: if it disconnects, cached state,
+ZeroScan HTTP and public RPC fallback continue to work.
 
 Normal `get_balance()` reads SQLite when the cached snapshot is still valid.
 Use `force_refresh_balance()` when the user explicitly presses refresh; the

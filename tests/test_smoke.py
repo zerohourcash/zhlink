@@ -443,6 +443,10 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertEqual(cfg.usdz_contract, DEFAULT_USDZ_CONTRACT)
         self.assertGreater(len(cfg.public_rpc_urls), 0)
 
+    def test_config_allows_long_lived_websocket_address_ttl(self) -> None:
+        cfg = ZHLinkConfig.public_network(address_subscription_ttl_seconds=12 * 60 * 60)
+        self.assertEqual(cfg.address_subscription_ttl_seconds, 43200)
+
     def test_top_level_import_does_not_require_httpx_rpc_stack(self) -> None:
         self.assertEqual(DEFAULT_USDZ_CONTRACT, "a48d0ee7365ce1add8e595de4d54344239f8ca28")
         import zhlink
