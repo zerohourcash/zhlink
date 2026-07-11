@@ -576,11 +576,14 @@ checks, and publishes the package to PyPI.
 
 Release flow:
 
+1. Make sure `pyproject.toml` contains the version you want to publish.
+2. Create and push a tag from that version:
+
 ```bash
-VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+VERSION=$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)
 git tag "v$VERSION"
 git push origin "v$VERSION"
 ```
 
-The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this
-GitHub repository/workflow as a trusted publisher.
+The workflow uses PyPI Trusted Publishing. The PyPI project must allow this
+GitHub repository and workflow as a trusted publisher.
