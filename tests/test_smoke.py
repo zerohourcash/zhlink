@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 import asyncio
 import time
@@ -409,6 +410,12 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
 
 
 class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
+    def test_readme_current_version_matches_pyproject(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        version = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+        readme = (repo / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"Current package version: `{version}`", readme)
+
     def test_new_zhlink_facade_is_small_and_beginner_friendly(self) -> None:
         import zhlink
 

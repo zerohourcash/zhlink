@@ -574,15 +574,18 @@ Never commit real private keys.
 ## Publishing
 
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
-checks, and publishes the package to PyPI. The current published version is
-shown automatically by the PyPI badge at the top of this README.
+checks, and publishes the package to PyPI.
+
+Current package version: `0.1.17`
 
 Release flow:
 
 1. Make sure `pyproject.toml` contains the version you want to publish.
-2. Create and push a tag from that version:
+2. Sync the README version line.
+3. Create and push a tag from that version:
 
 ```bash
+python3 scripts/sync_readme_version.py
 VERSION=$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)
 git tag "v$VERSION"
 git push origin "v$VERSION"
