@@ -12,6 +12,7 @@ dependencies = [
   "cryptography>=42",
   "httpx==0.28.1",
   "mnemonic==0.21",
+  "pycryptodome>=3.20",
 ]
 authors = [
   { name = "ZHCASH" },
@@ -22,11 +23,10 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["zhlink", "zhlink._vendor.zhc_rawtx"]
+include = ["zhlink*"]
 
 [tool.setuptools.package-data]
 zhlink = [
   "_vendor/bip39_english.txt",
   "_vendor/zhc_rawtx/*.py",
 ]
-

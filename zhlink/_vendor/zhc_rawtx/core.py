@@ -52,9 +52,17 @@ def hash256(data: bytes) -> bytes:
 
 
 def hash160(data: bytes) -> bytes:
-    ripe = hashlib.new("ripemd160")
-    ripe.update(sha256(data))
-    return ripe.digest()
+    digest = sha256(data)
+    try:
+        ripe = hashlib.new("ripemd160")
+        ripe.update(digest)
+        return ripe.digest()
+    except ValueError:
+        from Crypto.Hash import RIPEMD160
+
+        ripe = RIPEMD160.new()
+        ripe.update(digest)
+        return ripe.digest()
 
 
 def b58decode(value: str) -> bytes:

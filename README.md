@@ -22,6 +22,12 @@ Recommended Python:
 - Python `3.12` should work.
 - Python `3.9` and older are not supported.
 
+From PyPI:
+
+```bash
+pip install zhlink
+```
+
 From this folder:
 
 ```bash
@@ -177,3 +183,18 @@ PYTHONPATH=. python3 examples/run_all_examples.py
 
 Send examples are guarded by `RUN_REAL_SEND=1` and will not broadcast by
 accident. Never commit real private keys.
+
+## Publishing
+
+GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
+checks, and publishes the package to PyPI.
+
+Release flow:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this
+GitHub repository/workflow as a trusted publisher.
