@@ -265,6 +265,23 @@ python examples/watch_deposit_and_forward_usdz.py
 Without `RUN_REAL_SEND=1`, the example builds the gas-free transaction but does
 not broadcast it.
 
+For a long-running receiver that creates many deposit addresses, keeps them in a
+SQLite state file, watches active addresses through one shared WSS hub, and
+forwards received USDZ to the admin address:
+
+```bash
+RUN_USDZ_RECEIVER=1 \
+RUN_REAL_SEND=1 \
+ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
+ZHLINK_RECEIVER_ACTIVE=10 \
+ZHLINK_RECEIVER_MODE=pool \
+python examples/usdz_receiver_service.py
+```
+
+Use `ZHLINK_RECEIVER_MODE=sequential` when the service should create one address,
+wait for a deposit, forward it, and only then create the next receiver address.
+Receiver state is stored in `.zhlink-usdz-receiver.sqlite3` by default.
+
 ## Send ZHC
 
 ```python

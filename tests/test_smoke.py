@@ -638,6 +638,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             repo / "examples" / "simple_send_zhc.py",
             repo / "examples" / "simple_send_usdz_gas_free.py",
             repo / "examples" / "watch_deposit_and_forward_usdz.py",
+            repo / "examples" / "usdz_receiver_service.py",
         ]:
             completed = subprocess.run(
                 [sys.executable, str(script)],

@@ -27,6 +27,7 @@ GUARDED_SEND_EXAMPLES = [
     "simple_send_zhc.py",
     "simple_send_usdz_gas_free.py",
     "watch_deposit_and_forward_usdz.py",
+    "usdz_receiver_service.py",
 ]
 
 
