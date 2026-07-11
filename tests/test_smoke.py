@@ -250,6 +250,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
                 "create_address",
+                "create_wallet",
                 "derive_bip39_zhc_wallet",
                 "generate_bip39_mnemonic",
                 "generate_bip39_zhc_wallet",
