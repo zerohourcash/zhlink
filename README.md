@@ -56,6 +56,33 @@ Run a one-off script without manually creating a venv:
 uv run --with zhlink python your_script.py
 ```
 
+### Install Directly From GitHub
+
+Latest `main` branch:
+
+```bash
+pip install git+https://github.com/zerohourcash/zhlink.git
+```
+
+With `uv`:
+
+```bash
+uv pip install git+https://github.com/zerohourcash/zhlink.git
+```
+
+Inside a `uv` project:
+
+```bash
+uv add git+https://github.com/zerohourcash/zhlink.git
+```
+
+Install a fixed release tag:
+
+```bash
+pip install "git+https://github.com/zerohourcash/zhlink.git@v0.1.5"
+uv pip install "git+https://github.com/zerohourcash/zhlink.git@v0.1.5"
+```
+
 ### Verify Install
 
 ```bash
@@ -353,8 +380,8 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this
