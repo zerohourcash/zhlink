@@ -237,25 +237,27 @@ then RPC broadcast fallback.
 
 ### Watch a USDZ deposit and forward it gas-free
 
-The example below creates a fresh USDZ receiving address, watches it through the
-shared WSS hub, and forwards the detected USDZ to the admin address with
-`send_usdz_gas_free()`. Edit the constants at the top of the file before
-production use:
+The one-shot helper below creates a fresh USDZ receiving address, watches it
+through the shared WSS hub, and forwards the detected USDZ to the admin address
+with `send_usdz_gas_free()`. Heavy watcher/RPC logic stays inside the library.
 
 ```python
-FLAG_SEND_REAL_TX = True
-ADMIN_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
-ADMIN_GAS_WIF = "K..."
-MIN_USDZ = Decimal("0.00000001")
+from decimal import Decimal
+from zhlink import UsdzReceiverConfig, create_and_forward_usdz_deposit
+
+config = UsdzReceiverConfig(
+    admin_address="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
+    admin_gas_wif="K...",
+    min_usdz=Decimal("0.00000001"),
+    send_real_tx=True,
+)
+
+result = create_and_forward_usdz_deposit(config)
+print(result)
 ```
 
-```bash
-python examples/watch_deposit_and_forward_usdz.py
-```
-
-With `FLAG_SEND_REAL_TX=True`, the example broadcasts the real forwarding
-transaction. With `FLAG_SEND_REAL_TX=False`, it only builds/preflights and does
-not broadcast.
+With `send_real_tx=True`, the helper broadcasts the real forwarding transaction.
+With `send_real_tx=False`, it only builds/preflights and does not broadcast.
 
 For a long-running receiver, use the high-level receiver API. Heavy work is
 handled inside the library: SQLite state, WSS watching, balance checks,
@@ -586,7 +588,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.18`
+Current package version: `0.1.19`
 
 Release flow:
 

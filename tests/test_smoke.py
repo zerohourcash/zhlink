@@ -438,6 +438,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "async_send_zhc",
                 "call_contract",
                 "create_address",
+                "create_and_forward_usdz_deposit",
                 "create_usdz_receiver_address",
                 "create_wallet",
                 "delete_usdz_receiver_address",
@@ -471,6 +472,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.async_get_balance))
         self.assertTrue(callable(zhlink.watch_balance))
         self.assertTrue(callable(zhlink.run_usdz_receiver))
+        self.assertTrue(callable(zhlink.create_and_forward_usdz_deposit))
         self.assertTrue(callable(zhlink.create_usdz_receiver_address))
         self.assertTrue(callable(zhlink.delete_usdz_receiver_address))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))

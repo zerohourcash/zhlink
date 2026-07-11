@@ -45,6 +45,7 @@ from .mass import (
 )
 from .receiver import (
     UsdzReceiverConfig,
+    create_and_forward_usdz_deposit,
     create_usdz_receiver_address,
     delete_usdz_receiver_address,
     run_usdz_receiver,
@@ -67,6 +68,7 @@ __all__ = [
     "async_send_zhc",
     "call_contract",
     "create_address",
+    "create_and_forward_usdz_deposit",
     "create_usdz_receiver_address",
     "create_wallet",
     "delete_usdz_receiver_address",

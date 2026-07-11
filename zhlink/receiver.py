@@ -28,6 +28,7 @@ class UsdzReceiverConfig:
     address_subscription_ttl_seconds: float = 12 * 60 * 60
     ws_max_failures: int = 5
     ws_cooldown_seconds: float = 120.0
+    wait_timeout_seconds: float = 3600
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -192,6 +193,48 @@ async def _watch_receiver(row: sqlite3.Row, config: UsdzReceiverConfig) -> None:
             result = await _forward_deposit(row, usdz, config)
             print("forward result:", address, result)
             return
+
+
+async def _wait_for_usdz(address: str, config: UsdzReceiverConfig) -> Decimal:
+    zhc_config = ZHLinkConfig.public_network(
+        address_subscription_ttl_seconds=config.address_subscription_ttl_seconds,
+        ws_max_failures=config.ws_max_failures,
+        ws_cooldown_seconds=config.ws_cooldown_seconds,
+    )
+    started = time.monotonic()
+    async for balance in watch_balance(address, config=zhc_config):
+        if time.monotonic() - started >= config.wait_timeout_seconds:
+            raise TimeoutError(f"USDZ deposit was not detected in {config.wait_timeout_seconds} seconds")
+        if balance.get("status") == "error":
+            print("watch error:", address, balance.get("reason"))
+            continue
+        usdz = Decimal(str(balance.get("usdz", "0")))
+        print("receiver balance:", address, usdz, "USDZ")
+        if usdz >= config.min_usdz:
+            print("payment accepted:", address, usdz, "USDZ")
+            return usdz
+
+
+async def _create_and_forward_usdz_deposit_async(config: UsdzReceiverConfig) -> dict[str, Any]:
+    if config.admin_gas_wif == "":
+        raise RuntimeError("Set admin_gas_wif in UsdzReceiverConfig.")
+    _init_db(config.db_path)
+    row_dict = create_usdz_receiver_address(config)
+    address = row_dict["address"]
+    print("new USDZ deposit address:", address)
+    print("send at least", config.min_usdz, "USDZ to this address")
+
+    with closing(_connect(config.db_path)) as conn:
+        row = conn.execute("SELECT * FROM receiver_addresses WHERE address = ?", (address,)).fetchone()
+    amount = await _wait_for_usdz(address, config)
+    forward = await _forward_deposit(row, amount, config)
+    return {"receiver": row_dict, "amount": str(amount), "forward": forward}
+
+
+def create_and_forward_usdz_deposit(config: UsdzReceiverConfig | None = None) -> dict[str, Any]:
+    """Create one receiver address, wait for USDZ, then forward it gas-free."""
+
+    return asyncio.run(_create_and_forward_usdz_deposit_async(config or UsdzReceiverConfig()))
 
 
 async def _service_loop(config: UsdzReceiverConfig) -> None:
