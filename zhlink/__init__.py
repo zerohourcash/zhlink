@@ -45,11 +45,15 @@ from .mass import (
 )
 from .receiver import (
     UsdzReceiverConfig,
+    async_forward_usdz_deposit,
+    async_wait_for_usdz_deposit,
     create_and_forward_usdz_deposit,
     create_usdz_receiver_address,
     delete_usdz_receiver_address,
+    forward_usdz_deposit,
     run_usdz_receiver,
     usdz_receiver_status,
+    wait_for_usdz_deposit,
 )
 __all__ = [
     "Bip39Wallet",
@@ -62,10 +66,12 @@ __all__ = [
     "MassSendPlan",
     "admin_gas_wallet_info",
     "async_force_refresh_balance",
+    "async_forward_usdz_deposit",
     "async_get_balance",
     "async_send_to_contract",
     "async_send_usdz_gas_free",
     "async_send_zhc",
+    "async_wait_for_usdz_deposit",
     "call_contract",
     "create_address",
     "create_and_forward_usdz_deposit",
@@ -74,6 +80,7 @@ __all__ = [
     "delete_usdz_receiver_address",
     "derive_bip39_zhc_wallet",
     "estimate_mass_send",
+    "forward_usdz_deposit",
     "get_mass_send_template",
     "generate_bip39_mnemonic",
     "generate_bip39_zhc_wallet",
@@ -90,6 +97,7 @@ __all__ = [
     "usdz_receiver_status",
     "validate_bip39_mnemonic",
     "wait_for_next_block",
+    "wait_for_usdz_deposit",
     "watch_balance",
     "write_mass_send_template",
 ]

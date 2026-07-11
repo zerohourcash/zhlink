@@ -259,23 +259,40 @@ print(result)
 With `send_real_tx=True`, the helper broadcasts the real forwarding transaction.
 With `send_real_tx=False`, it only builds/preflights and does not broadcast.
 
-For a long-running receiver, use the high-level receiver API. Heavy work is
-handled inside the library: SQLite state, WSS watching, balance checks,
+For a production receiver, keep the workflow linear: create one deposit address
+for a real request, wait for confirmed USDZ, then forward it gas-free. Heavy
+work is handled inside the library: SQLite state, WSS watching, balance checks,
 gas-free forwarding, and optional cleanup.
 
 Public receiver controls:
 
 - `UsdzReceiverConfig` - one config object for admin wallet, limits, storage and realtime settings;
 - `create_and_forward_usdz_deposit(config)` - one-shot flow: create address, wait for USDZ, forward gas-free;
-- `run_usdz_receiver(action="status" | "new" | "delete" | "serve", ...)` - simple managed receiver runner;
+- `wait_for_usdz_deposit(address, config)` - wait until a stored receiver address receives enough USDZ;
+- `forward_usdz_deposit(address, amount, config)` - forward a detected USDZ deposit with admin-paid gas;
+- `run_usdz_receiver(action="new" | "delete" | "serve", ...)` - optional managed receiver runner;
 - `create_usdz_receiver_address(config)` - create one receiver address on demand;
 - `delete_usdz_receiver_address(address, config)` - remove a receiver address and its private key from local state;
 - `usdz_receiver_status(config)` - inspect receiver storage and active addresses.
 
+For debugging, pass `debug=True` or `event_callback=...` in the config. The
+callback receives plain dictionaries such as `receiver_created`,
+`receiver_payment_mempool`, `receiver_payment_accepted`,
+`receiver_forward_start`, `receiver_forward_ok`, and `receiver_forward_error`.
+
 ```python
 from decimal import Decimal
 from pathlib import Path
-from zhlink import UsdzReceiverConfig, run_usdz_receiver
+from pprint import pprint
+from zhlink import (
+    UsdzReceiverConfig,
+    create_usdz_receiver_address,
+    forward_usdz_deposit,
+    wait_for_usdz_deposit,
+)
+
+def on_event(event):
+    pprint(event)
 
 config = UsdzReceiverConfig(
     admin_address="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
@@ -284,20 +301,31 @@ config = UsdzReceiverConfig(
     send_real_tx=True,
     delete_after_forward=False,
     db_path=Path(".zhlink-usdz-receiver.sqlite3"),
+    debug=True,
+    event_callback=on_event,
 )
 
-run_usdz_receiver(action="status", config=config)
+receiver = create_usdz_receiver_address(config)
+print("Send USDZ to:", receiver["address"])
+
+amount = wait_for_usdz_deposit(receiver["address"], config)
+result = forward_usdz_deposit(receiver["address"], amount, config)
+print(result)
 ```
 
-Create a new deposit address only when your application receives a new deposit
-request:
+The standalone production example follows the same flow from start to finish:
 
-```python
-row = run_usdz_receiver(action="new", config=config)
-print(row["address"])
+```bash
+python examples/usdz_receiver_service.py
 ```
 
-Start the receiver service:
+It creates a receiver address, waits for USDZ, forwards it, and then prints the
+forwarding result. Address deletion is intentionally left as a commented line in
+the example, so your application can decide whether to keep or remove receiver
+history after a successful forward.
+
+For daemon-style applications, create addresses on explicit user requests and
+then start the service loop:
 
 ```python
 run_usdz_receiver(action="serve", config=config)
@@ -307,12 +335,6 @@ Delete a receiver address after use:
 
 ```python
 run_usdz_receiver(action="delete", config=config, delete_address="Z...")
-```
-
-The standalone example keeps only this top-level logic:
-
-```bash
-python examples/usdz_receiver_service.py
 ```
 
 `examples/usdz_receiver_service.py` is production-oriented by default:
@@ -597,7 +619,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.19`
+Current package version: `0.1.20`
 
 Release flow:
 
