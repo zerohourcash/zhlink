@@ -1,0 +1,4 @@
+cryptography>=42
+httpx==0.28.1
+mnemonic==0.21
+
