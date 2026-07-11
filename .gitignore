@@ -11,3 +11,7 @@ build/
 .zhlink-gasfree-utxos.json
 .production-gasfree-utxos.json
 *.log
+
+# zhlink runtime cache
+.zhlink-cache.sqlite3
+*.sqlite3

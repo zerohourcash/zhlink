@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zhlink"
-version = "0.1.5"
+version = "0.1.7"
 description = "Self-contained Python library for ZHCASH addresses, balances, ZHC sends, and USDZ gas-free sends."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "aiohttp>=3.9",
   "cryptography>=42",
   "httpx==0.28.1",
   "mnemonic==0.21",

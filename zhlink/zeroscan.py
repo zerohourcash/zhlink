@@ -11,6 +11,8 @@ import httpx
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
+ENDPOINT_FAILURE_COOLDOWN_SECONDS = 60.0
+ENDPOINT_FAILURES_BEFORE_COOLDOWN = 3
 
 
 @dataclass
@@ -18,6 +20,7 @@ class ZeroScanEndpoint:
     api_base: str
     web_base: str
     failures: int = 0
+    disabled_until: float = 0.0
     last_ok_ts: float = 0.0
     last_latency_ms: float = 0.0
     last_height: int = 0
@@ -84,6 +87,23 @@ class ZeroScanRPC:
                 self._active_index = best_index
             return self.active_endpoint
 
+    async def get_info(self) -> Any:
+        return await self._request_json("GET", "/info")
+
+    async def get_block_height(self) -> int:
+        data = await self.get_info()
+        if isinstance(data, dict) and data.get("status") == "error":
+            raise RuntimeError(data.get("reason") or "ZeroScan info failed")
+        if not isinstance(data, dict):
+            raise RuntimeError(f"Unexpected ZeroScan info response: {data}")
+        return int(
+            data.get("height")
+            or data.get("blockHeight")
+            or data.get("blocks")
+            or data.get("block_height")
+            or 0
+        )
+
     async def _probe_endpoint(self, index: int) -> bool:
         endpoint = self.endpoints[index]
         started = time.monotonic()
@@ -94,6 +114,7 @@ class ZeroScanRPC:
             endpoint.last_latency_ms = (time.monotonic() - started) * 1000
             endpoint.last_ok_ts = time.time()
             endpoint.failures = 0
+            endpoint.disabled_until = 0.0
             endpoint.last_height = int(
                 data.get("height")
                 or data.get("blockHeight")
@@ -104,16 +125,26 @@ class ZeroScanRPC:
             return True
         except Exception as exc:
             endpoint.failures += 1
+            if endpoint.failures >= ENDPOINT_FAILURES_BEFORE_COOLDOWN:
+                endpoint.disabled_until = time.time() + ENDPOINT_FAILURE_COOLDOWN_SECONDS
             logger.warning("ZeroScan probe failed for %s: %s", endpoint.api_base, exc)
             return False
 
     def _ordered_indexes(self) -> List[int]:
-        indexes = list(range(len(self.endpoints)))
+        now = time.time()
+        healthy = [
+            index
+            for index, endpoint in enumerate(self.endpoints)
+            if endpoint.disabled_until <= now
+        ]
+        indexes = healthy or list(range(len(self.endpoints)))
 
         def score(index: int):
             endpoint = self.endpoints[index]
             active_penalty = 0 if index == self._active_index else 1
+            disabled_penalty = 1 if endpoint.disabled_until > now else 0
             return (
+                disabled_penalty,
                 endpoint.failures,
                 active_penalty,
                 -endpoint.last_height,
@@ -142,10 +173,13 @@ class ZeroScanRPC:
                 endpoint.last_latency_ms = (time.monotonic() - started) * 1000
                 endpoint.last_ok_ts = time.time()
                 endpoint.failures = 0
+                endpoint.disabled_until = 0.0
                 self._active_index = index
                 return data
             except Exception as exc:
                 endpoint.failures += 1
+                if endpoint.failures >= ENDPOINT_FAILURES_BEFORE_COOLDOWN:
+                    endpoint.disabled_until = time.time() + ENDPOINT_FAILURE_COOLDOWN_SECONDS
                 last_error = exc
                 logger.warning("ZeroScan request failed for %s%s: %s", endpoint.api_base, normalized_path, exc)
         return {"status": "error", "reason": str(last_error or "All ZeroScan endpoints failed")}

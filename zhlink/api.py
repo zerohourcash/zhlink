@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 from . import _rawtx_bridge  # noqa: F401
 from .address import BitcoinAddress, WalletKey, create_wallet
+from .cache import SQLiteBalanceCache
 from .config import DEFAULT_USDZ_CONTRACT, ZHLinkConfig
 from zhc_rawtx import GasFreeStore, send_usdz_gas_freee  # type: ignore
 from zhc_rawtx.gasfree import zhc_address_hash  # type: ignore
@@ -29,15 +30,22 @@ class Balance:
     usdz: Decimal
     tokens: dict[str, Decimal]
     utxo_count: int = 0
+    confirmed_zhc: Decimal | None = None
+    pending_zhc: Decimal | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "address": self.address,
             "zhc": str(self.zhc),
             "usdz": str(self.usdz),
             "tokens": {symbol: str(value) for symbol, value in self.tokens.items()},
             "utxo_count": self.utxo_count,
         }
+        if self.confirmed_zhc is not None:
+            data["confirmed_zhc"] = str(self.confirmed_zhc)
+        if self.pending_zhc is not None:
+            data["pending_zhc"] = str(self.pending_zhc)
+        return data
 
 
 def _run(coro):
@@ -68,6 +76,46 @@ def _address_from_wif(private_key_wif: str) -> str:
     return BitcoinAddress().address_from_wif(private_key_wif)
 
 
+def _requested_token_symbols(tokens: Mapping[str, str] | None) -> set[str]:
+    symbols = {"USDZ"}
+    symbols.update(symbol.upper() for symbol in (tokens or {}).keys())
+    return symbols
+
+
+def _balance_from_cached_payload(
+    address: str,
+    payload: Mapping[str, Any],
+    requested_symbols: set[str],
+) -> Balance | None:
+    token_payload = payload.get("tokens")
+    if not isinstance(token_payload, Mapping):
+        return None
+    cached_symbols = {str(symbol).upper() for symbol in token_payload.keys()}
+    if not requested_symbols.issubset(cached_symbols):
+        return None
+    return Balance(
+        address=address,
+        zhc=Decimal(str(payload.get("zhc", payload.get("balance", "0")))),
+        usdz=Decimal(str(payload.get("usdz", token_payload.get("USDZ", "0")))),
+        tokens={
+            str(symbol).upper(): Decimal(str(value))
+            for symbol, value in token_payload.items()
+            if str(symbol).upper() in requested_symbols
+        },
+        utxo_count=int(payload.get("utxo_count") or payload.get("utxo_len") or 0),
+        confirmed_zhc=Decimal(str(payload["confirmed_zhc"]))
+        if "confirmed_zhc" in payload
+        else Decimal(str(payload["confirmed_balance"]))
+        if "confirmed_balance" in payload and payload.get("confirmed_balance") is not None
+        else None,
+        pending_zhc=Decimal(str(payload["pending_zhc"]))
+        if "pending_zhc" in payload
+        else Decimal(str(payload["pending_balance"]))
+        if "pending_balance" in payload and payload.get("pending_balance") is not None
+        else None,
+    )
+
+
 def create_address() -> WalletKey:
     """Create one local ZHCASH address and WIF private key."""
 
@@ -80,29 +128,67 @@ async def _get_balance_async(
     config: ZHLinkConfig | None = None,
     tokens: Mapping[str, str] | None = None,
     token_decimals: Mapping[str, int] | None = None,
+    force_refresh: bool = False,
 ) -> Balance:
     from .rpc import ZHCashRPC
 
+    cfg = config or ZHLinkConfig()
+    requested_symbols = _requested_token_symbols(tokens)
+    cached = SQLiteBalanceCache(cfg.cache_path).get_balance(address)
+    if not force_refresh and cached:
+        cached_balance = _balance_from_cached_payload(address, cached, requested_symbols)
+        if cached_balance is not None:
+            return cached_balance
+
     client = ZHCashRPC(config)
     try:
-        base = await client.getbalance(address)
+        base = await client.getbalance(address, force_refresh=force_refresh)
         if base.get("status") != "ok":
             raise RuntimeError(base.get("reason") or base)
+        if base.get("cached") or base.get("throttled"):
+            cached_balance = _balance_from_cached_payload(address, base, requested_symbols)
+            if cached_balance is not None:
+                return cached_balance
         zhc = Decimal(str(base.get("balance", "0")))
+        confirmed_zhc = (
+            Decimal(str(base["confirmed_balance"]))
+            if "confirmed_balance" in base
+            else Decimal(str(base["confirmed_zhc"]))
+            if "confirmed_zhc" in base
+            else None
+        )
+        pending_zhc = (
+            Decimal(str(base["pending_balance"]))
+            if "pending_balance" in base
+            else Decimal(str(base["pending_zhc"]))
+            if "pending_zhc" in base
+            else None
+        )
         decimals = dict(token_decimals or {})
-        contracts = {"USDZ": (config or ZHLinkConfig()).usdz_contract}
+        contracts = {"USDZ": cfg.usdz_contract}
         contracts.update({symbol.upper(): contract for symbol, contract in (tokens or {}).items()})
         token_values: dict[str, Decimal] = {}
         for symbol, contract in contracts.items():
             raw = await client.get_zrc20_balance_raw(contract, address)
             token_values[symbol] = _from_raw(raw, decimals.get(symbol, 8))
-        return Balance(
+        balance = Balance(
             address=address,
             zhc=zhc,
             usdz=token_values.get("USDZ", Decimal("0")),
             tokens=token_values,
             utxo_count=int(base.get("utxo_len") or 0),
+            confirmed_zhc=confirmed_zhc,
+            pending_zhc=pending_zhc,
         )
+        client.sqlite_cache.put_balance(
+            address,
+            {
+                **base,
+                **balance.as_dict(),
+            },
+            int(base.get("height") or 0),
+        )
+        return balance
     finally:
         await client.close()
 
@@ -127,6 +213,41 @@ def get_balance(
             token_decimals=token_decimals,
         )
     ).as_dict()
+
+
+def force_refresh_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Refresh an address balance, throttled by ``config.force_refresh_seconds``.
+
+    If called more often than the configured interval, the last SQLite snapshot
+    is returned with ``throttled=True``.
+    """
+
+    return _run(
+        _get_balance_async(
+            address,
+            config=config,
+            tokens=tokens,
+            token_decimals=token_decimals,
+            force_refresh=True,
+        )
+    ).as_dict()
+
+
+def get_cached_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any] | None:
+    """Return the last SQLite balance snapshot without network access."""
+
+    cfg = config or ZHLinkConfig()
+    return SQLiteBalanceCache(cfg.cache_path).get_balance(address)
 
 
 async def _send_zhc_async(
@@ -595,6 +716,8 @@ __all__ = [
     "admin_gas_wallet_info",
     "call_contract",
     "create_address",
+    "force_refresh_balance",
+    "get_cached_balance",
     "get_balance",
     "send_to_contract",
     "send_zhc",

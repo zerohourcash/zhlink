@@ -7,6 +7,8 @@ from .api import (
     call_contract,
     create_address,
     create_wallet,
+    force_refresh_balance,
+    get_cached_balance,
     get_balance,
     send_to_contract,
     send_zhc,
@@ -15,6 +17,7 @@ from .api import (
 from .config import (
     ZHLinkConfig,
 )
+from .errors import WaitNextBlockError
 from .mnemonic import (
     Bip39Wallet,
     derive_bip39_zhc_wallet,
@@ -34,11 +37,11 @@ from .mass import (
     wait_for_next_block,
     write_mass_send_template,
 )
-
 __all__ = [
     "Bip39Wallet",
     "Balance",
     "ZHLinkConfig",
+    "WaitNextBlockError",
     "MASS_SEND_TEMPLATE_NAMES",
     "MassRecipient",
     "MassSendPlan",
@@ -51,6 +54,8 @@ __all__ = [
     "get_mass_send_template",
     "generate_bip39_mnemonic",
     "generate_bip39_zhc_wallet",
+    "force_refresh_balance",
+    "get_cached_balance",
     "get_balance",
     "load_mass_send_plan",
     "prepare_mass_send_utxos",

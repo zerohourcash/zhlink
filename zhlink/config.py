@@ -26,6 +26,9 @@ DEFAULT_ADMIN_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
 DEFAULT_ADMIN_FEE = Decimal("0")
 DEFAULT_EXTRA_FEE = Decimal("0")
 DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_CACHE_PATH = ".zhlink-cache.sqlite3"
+DEFAULT_FORCE_REFRESH_SECONDS = 10.0
+DEFAULT_BLOCK_POLL_SECONDS = 30.0
 
 # Production-test keys requested for gas-free USDZ validation.
 # These are test wallets for controlled sends only.
@@ -56,6 +59,9 @@ class ZHLinkConfig:
     extra_fee: Decimal = DEFAULT_EXTRA_FEE
     gasfree_admin_private_key: str = ""
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    cache_path: str = DEFAULT_CACHE_PATH
+    force_refresh_seconds: float = DEFAULT_FORCE_REFRESH_SECONDS
+    block_poll_seconds: float = DEFAULT_BLOCK_POLL_SECONDS
 
     @classmethod
     def public_network(
@@ -71,6 +77,9 @@ class ZHLinkConfig:
         extra_fee: str | Decimal = DEFAULT_EXTRA_FEE,
         gasfree_admin_private_key: str = "",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        cache_path: str = DEFAULT_CACHE_PATH,
+        force_refresh_seconds: float = DEFAULT_FORCE_REFRESH_SECONDS,
+        block_poll_seconds: float = DEFAULT_BLOCK_POLL_SECONDS,
     ) -> "ZHLinkConfig":
         return cls(
             admin_address=admin_address,
@@ -83,4 +92,7 @@ class ZHLinkConfig:
             gasfree_admin_private_key=gasfree_admin_private_key,
             timeout_seconds=timeout_seconds,
             log_dir=log_dir,
+            cache_path=cache_path,
+            force_refresh_seconds=force_refresh_seconds,
+            block_poll_seconds=block_poll_seconds,
         )

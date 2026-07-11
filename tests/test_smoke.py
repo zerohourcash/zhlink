@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import asyncio
+from decimal import Decimal
 from pathlib import Path
 
 from zhlink.address import BitcoinAddress
@@ -15,6 +17,8 @@ from zhlink.config import (
     TEST_GASFREE_ADMIN_PRIVATE_KEY,
     ZHLinkConfig,
 )
+from zhlink.api import Balance
+from zhlink.cache import SQLiteBalanceCache
 from zhlink.mnemonic import (
     ZHC_DEFAULT_DERIVATION_PATH,
     derive_bip39_zhc_wallet,
@@ -25,6 +29,8 @@ from zhlink.mnemonic import (
     validate_bip39_mnemonic,
 )
 from zhlink.signer import sign_raw_transaction_with_key
+from zhlink.rpc import WaitNextBlockError, ZHCashRPC
+from zhlink.zeroscan import ZeroScanRPC
 from zhc_rawtx import ZHC
 from zhc_rawtx import GasFreeStore, consolidate_utxos, send_usdz_gas_freee, split_largest_utxo
 from zhc_rawtx.core import compressed_pubkey, p2pkh_script_pubkey, private_key_from_wif, serialize_tx
@@ -237,6 +243,89 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
         )
         self.assertEqual(consolidated["selected_outpoints"], [f"{'aa' * 32}:0", f"{'bb' * 32}:0"])
 
+    def test_wait_next_block_when_reserved_utxo_is_required(self) -> None:
+        client = ZHCashRPC()
+        outpoint = f"{'aa' * 32}:0"
+        client.reserved_utxos[outpoint] = 1
+        utxos = [
+            {
+                "txid": "aa" * 32,
+                "vout": 0,
+                "value": 20_000_000,
+                "scriptPubKey": ADMIN_SCRIPT,
+                "confirmations": 10,
+            }
+        ]
+
+        with self.assertRaises(WaitNextBlockError) as ctx:
+            client._select_utxos_inner(
+                utxos,
+                min_fee=Decimal("0.1"),
+                amount=Decimal("0.01"),
+            )
+
+        self.assertEqual(ctx.exception.diagnostics["reason"], "all_spendable_utxos_reserved")
+        self.assertEqual(ctx.exception.diagnostics["available_utxos"], 0)
+
+    def test_balance_dict_can_expose_confirmed_and_pending(self) -> None:
+        balance = Balance(
+            address=ADMIN_ADDRESS,
+            zhc=Decimal("1.50000000"),
+            confirmed_zhc=Decimal("1.00000000"),
+            pending_zhc=Decimal("0.50000000"),
+            usdz=Decimal("2.00000000"),
+            tokens={"USDZ": Decimal("2.00000000")},
+            utxo_count=1,
+        ).as_dict()
+
+        self.assertEqual(balance["zhc"], "1.50000000")
+        self.assertEqual(balance["confirmed_zhc"], "1.00000000")
+        self.assertEqual(balance["pending_zhc"], "0.50000000")
+
+    def test_sqlite_balance_cache_stores_snapshots_and_throttles_force_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SQLiteBalanceCache(Path(tmp) / "zhlink.sqlite3")
+            payload = {
+                "status": "ok",
+                "zhc": "1.50000000",
+                "confirmed_zhc": "1.00000000",
+                "pending_zhc": "0.50000000",
+                "tokens": {"USDZ": "2.00000000"},
+                "utxo_count": 1,
+            }
+            cache.put_balance(ADMIN_ADDRESS, payload, 123)
+            utxos = [
+                {
+                    "txid": "aa" * 32,
+                    "vout": 0,
+                    "value_sat": 100_000_000,
+                    "scriptPubKey": ADMIN_SCRIPT,
+                    "confirmations": 10,
+                }
+            ]
+            cache.put_utxos(ADMIN_ADDRESS, utxos, 123)
+            cached = cache.get_balance(ADMIN_ADDRESS)
+            cached_utxos = cache.get_utxos(ADMIN_ADDRESS)
+
+            self.assertIsNotNone(cached)
+            self.assertEqual(cached["zhc"], "1.50000000")
+            self.assertEqual(cached["height"], 123)
+            self.assertEqual(cached_utxos, utxos)
+            self.assertFalse(cache.can_force_refresh(ADMIN_ADDRESS, 10))
+            self.assertTrue(cache.can_force_refresh(ADMIN_ADDRESS, 0))
+            cache.set_last_block_height(124)
+            self.assertEqual(cache.get_last_block_height(), 124)
+
+    def test_zeroscan_endpoint_circuit_breaker_skips_temporarily_disabled_endpoint(self) -> None:
+        client = ZeroScanRPC(["https://bad.example", "https://good.example"])
+        try:
+            client.endpoints[0].failures = 3
+            client.endpoints[0].disabled_until = 9999999999.0
+            ordered = client._ordered_indexes()
+            self.assertEqual(ordered[0], 1)
+        finally:
+            asyncio.run(client.close())
+
 
 class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
     def test_new_zhlink_facade_is_small_and_beginner_friendly(self) -> None:
@@ -250,6 +339,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "MASS_SEND_TEMPLATE_NAMES",
                 "MassRecipient",
                 "MassSendPlan",
+                "WaitNextBlockError",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
                 "call_contract",
@@ -257,9 +347,11 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "create_wallet",
                 "derive_bip39_zhc_wallet",
                 "estimate_mass_send",
+                "force_refresh_balance",
                 "generate_bip39_mnemonic",
                 "generate_bip39_zhc_wallet",
                 "get_balance",
+                "get_cached_balance",
                 "get_mass_send_template",
                 "load_mass_send_plan",
                 "prepare_mass_send_utxos",

@@ -137,8 +137,15 @@ from zhlink import get_balance
 balance = get_balance("Z...")
 
 print(balance["zhc"])
+print(balance.get("confirmed_zhc"))
+print(balance.get("pending_zhc"))
 print(balance["usdz"])
 ```
+
+`zhc` is the visible balance. When ZeroScan exposes pending data, positive
+0-confirmation change is included in `zhc`, while `confirmed_zhc` and
+`pending_zhc` are also returned separately. Sending still uses only confirmed
+spendable UTXO.
 
 Extra ZRC-20 tokens can be requested when needed:
 
@@ -152,6 +159,55 @@ balance = get_balance(
 
 print(balance["tokens"]["EDS"])
 ```
+
+## Cached Balance and WSS Updates
+
+`zhlink` stores public balance snapshots in a small local SQLite cache. Private
+keys are never stored there.
+
+```python
+from zhlink import force_refresh_balance, get_cached_balance
+
+cached = get_cached_balance("Z...")
+fresh = force_refresh_balance("Z...")  # throttled, default: once per 10 sec
+```
+
+For a Python wallet UI, use the async client and subscribe to address updates:
+
+```python
+import asyncio
+from zhlink.rpc import ZHCashRPC
+
+async def main():
+    client = ZHCashRPC()
+
+    def on_balance(address, snapshot):
+        print(address, snapshot["zhc"], snapshot.get("height"))
+
+    client.subscribe_balance("Z...", on_balance)
+    await client.start_block_watch()
+    await asyncio.sleep(3600)
+    await client.close()
+
+asyncio.run(main())
+```
+
+Block detection uses the best available channel:
+
+1. WSS block stream from configured `block_ws_urls`;
+2. ZeroScan `/info` polling if WSS is interrupted;
+3. public RPC `getblockcount` fallback if ZeroScan is unavailable.
+
+Normal `get_balance()` reads SQLite when the cached snapshot is still valid.
+Use `force_refresh_balance()` when the user explicitly presses refresh; the
+library will refuse to refresh the same address more often than once per
+`force_refresh_seconds` seconds.
+
+UTXO snapshots are cached in the same SQLite file. If a ZeroScan endpoint hangs
+or RPC is temporarily unavailable, the library can still read the last known
+UTXO set and show useful wallet state. Real sends still use the normal safety
+pipeline: local UTXO reservation, dry-run when available, ZeroScan broadcast,
+then RPC broadcast fallback.
 
 ## Send ZHC
 
@@ -168,6 +224,22 @@ print(result)
 ```
 
 The sender address is derived from the private key automatically.
+
+If the previous transaction already used the only large UTXO and the visible
+balance now mostly comes from 0-confirmation change, `send_zhc` does not build
+a conflicting transaction. It returns:
+
+```python
+{
+    "status": "error",
+    "action_required": "wait_next_block",
+    "reason": "Wait for the next block before sending again. ...",
+    "diagnostics": {...},
+}
+```
+
+Handle this by waiting for the next ZHCASH block, then call `send_zhc` again.
+This prevents accidental double-spend attempts and confusing mempool errors.
 
 ## Smart Contracts
 
@@ -207,6 +279,11 @@ print(result)
 The sender address is derived locally. The function runs `callcontract`
 preflight, selects UTXO, signs locally, checks mempool when RPC is available,
 broadcasts through ZeroScan and falls back to RPC broadcast.
+
+`send_to_contract` uses the same UTXO reservation rule as `send_zhc`: if the
+only suitable gas UTXO is already reserved by a pending local transaction, it
+returns `action_required: "wait_next_block"` instead of sending a broken
+contract transaction.
 
 ## Mass Send
 

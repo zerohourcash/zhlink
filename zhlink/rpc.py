@@ -6,12 +6,14 @@ import logging
 import re
 import traceback
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import httpx
 
 from .address import BitcoinAddress
+from .cache import SQLiteBalanceCache
 from .config import ZHLinkConfig
+from .errors import WAIT_NEXT_BLOCK_MESSAGE, WaitNextBlockError
 from .signer import sign_raw_transaction_with_key
 from .zeroscan import ZeroScanRPC
 
@@ -43,8 +45,7 @@ PRIVATE_KEY_RPC_METHODS = {"signrawtransactionwithkey"}
 MAX_BNB_COINS = 48
 MAX_BNB_TRIES = 100_000
 KNAPSACK_PASSES = 1_000
-
-
+BalanceCallback = Callable[[str, Dict[str, Any]], Any | Awaitable[Any]]
 def _as_decimal(value: Any) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
 
@@ -86,6 +87,10 @@ def _utxo_outpoint(utxo: Dict[str, Any]) -> str:
 
 def _selection_total(coins: List[Dict[str, Any]]) -> int:
     return sum(int(coin.get("value_sat", _to_sats(coin["amount"]))) for coin in coins)
+
+
+def _spendable_total_sat(utxos: List[Dict[str, Any]]) -> int:
+    return sum(int(utxo.get("value_sat", _to_sats(utxo["amount"]))) for utxo in utxos)
 
 
 def _compare_selection(
@@ -278,12 +283,15 @@ class ZHCashRPC:
         self.reserved_utxos: Dict[str, int] = {}
         self.reservation_height: Optional[int] = None
         self.balance_cache: Dict[str, Dict[str, Any]] = {}
+        self.sqlite_cache = SQLiteBalanceCache(self.config.cache_path)
         self.last_block_height: Optional[int] = None
         self.last_block_hash: str = ""
         self.block_ws_active_url: Optional[str] = None
         self.block_ws_task: Optional[asyncio.Task] = None
+        self.block_poll_task: Optional[asyncio.Task] = None
         self.utxo_lock = asyncio.Lock()
         self.scan_lock = asyncio.Lock()  # Лок для предотвращения повторного вызова
+        self.balance_subscriptions: Dict[str, List[BalanceCallback]] = {}
 
     async def close(self):
         await self.stop_block_watch()
@@ -307,41 +315,108 @@ class ZHCashRPC:
             self.balance_cache = {}
         self.reserved_utxos.clear()
         self.balance_cache.clear()
+        self.sqlite_cache.set_last_block_height(height)
         logger.info("New ZHCash block from websocket: %s %s", height, block_hash)
+        if getattr(self, "balance_subscriptions", None):
+            asyncio.create_task(self._refresh_subscribed_balances(height))
         return True
 
+    async def _refresh_subscribed_balances(self, height: int) -> None:
+        for address, callbacks in list(getattr(self, "balance_subscriptions", {}).items()):
+            try:
+                snapshot = await self.getbalance(address, force_refresh=True)
+            except Exception as exc:
+                snapshot = {
+                    "status": "error",
+                    "reason": str(exc),
+                    "height": height,
+                    "address": address,
+                }
+            for callback in list(callbacks):
+                try:
+                    result = callback(address, snapshot)
+                    if hasattr(result, "__await__"):
+                        await result
+                except Exception as exc:
+                    logger.warning("Balance subscriber failed for %s: %s", address, exc)
+
+    def subscribe_balance(self, address: str, callback: BalanceCallback) -> Callable[[], None]:
+        """Subscribe to cached balance updates for one address.
+
+        Call ``start_block_watch()`` to receive WSS-driven updates. The returned
+        function unsubscribes the callback.
+        """
+
+        callbacks = self.balance_subscriptions.setdefault(address, [])
+        callbacks.append(callback)
+
+        def unsubscribe() -> None:
+            current = self.balance_subscriptions.get(address, [])
+            with contextlib.suppress(ValueError):
+                current.remove(callback)
+            if not current:
+                self.balance_subscriptions.pop(address, None)
+
+        return unsubscribe
+
     async def start_block_watch(self) -> bool:
-        if self.block_ws_task and not self.block_ws_task.done():
+        if (
+            (self.block_ws_task and not self.block_ws_task.done())
+            or (self.block_poll_task and not self.block_poll_task.done())
+        ):
             return True
         try:
             import aiohttp  # type: ignore
         except Exception as exc:
             logger.warning("Block websocket disabled: aiohttp is unavailable: %s", exc)
-            return False
+            self.block_poll_task = asyncio.create_task(self._block_poll_loop())
+            return True
         self.block_ws_task = asyncio.create_task(self._block_ws_loop(aiohttp))
+        self.block_poll_task = asyncio.create_task(self._block_poll_loop())
         return True
 
     async def stop_block_watch(self) -> None:
-        task = self.block_ws_task
-        if not task:
-            return
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        for task in (self.block_ws_task, self.block_poll_task):
+            if not task:
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         self.block_ws_task = None
+        self.block_poll_task = None
+
+    async def _block_poll_loop(self) -> None:
+        interval = max(5.0, float(self.config.block_poll_seconds))
+        while True:
+            try:
+                try:
+                    height = int(await self.zero_rpc.get_block_height())
+                except Exception as zeroscan_error:
+                    logger.warning("ZeroScan block polling failed, trying RPC: %s", zeroscan_error)
+                    height = int(await self.getblockcount())
+                self._remember_block_tip({"height": height, "source": "poll"})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Block polling failed: %s", exc)
+            await asyncio.sleep(interval)
 
     async def _block_ws_loop(self, aiohttp_module: Any) -> None:
         delay = 1.0
         while True:
+            any_connected = False
             for url in self.block_ws_urls:
                 try:
                     await self._consume_block_ws(aiohttp_module, url)
+                    any_connected = True
                     delay = 1.0
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     logger.warning("Block websocket failed for %s: %s", url, exc)
                     self.block_ws_active_url = None
+            if not any_connected:
+                logger.warning("All block websocket endpoints failed; RPC block polling remains active.")
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
 
@@ -547,12 +622,34 @@ class ZHCashRPC:
             utxos = await self.zero_rpc.get_utxos(address)
             normalized = self.normalize_utxos(utxos)
             if normalized:
+                self.sqlite_cache.put_utxos(
+                    address,
+                    normalized,
+                    getattr(self, "last_block_height", None) or self.sqlite_cache.get_last_block_height(),
+                )
                 return normalized
         except Exception as e:
             logger.warning("ZeroScan UTXO lookup failed, falling back to RPC: %s", e)
 
-        res = await self.scantxoutset(address)
-        return await self._filter_rpc_utxos(res.get('unspents', []))
+        try:
+            res = await self.scantxoutset(address)
+            normalized = await self._filter_rpc_utxos(res.get('unspents', []))
+            if normalized:
+                self.sqlite_cache.put_utxos(
+                    address,
+                    normalized,
+                    getattr(self, "last_block_height", None) or self.sqlite_cache.get_last_block_height(),
+                )
+                return normalized
+        except Exception as e:
+            logger.warning("RPC UTXO lookup failed, trying SQLite cache: %s", e)
+
+        cached = self.sqlite_cache.get_utxos(address)
+        if cached:
+            for utxo in cached:
+                utxo["cached"] = True
+            return cached
+        return []
 
     def calculate_tx_weight(self, vin_count: int, vout_count: int = 3) -> int:
         avg_input_size = 148
@@ -590,6 +687,12 @@ class ZHCashRPC:
     async def _current_block_height_for_reservations(self) -> Optional[int]:
         if getattr(self, "last_block_height", None):
             return int(self.last_block_height)
+        try:
+            height = int(await self.zero_rpc.get_block_height())
+            if height > 0:
+                return height
+        except Exception as exc:
+            logger.warning("Could not read block height from ZeroScan: %s", exc)
         try:
             return int(await self.getblockcount())
         except Exception as exc:
@@ -631,12 +734,25 @@ class ZHCashRPC:
         extra_fee: Optional[Decimal] = None,
     ) -> List[Dict[str, Any]]:
         reserved = set(getattr(self, "reserved_utxos", {}).keys())
+        normalized_utxos = self.normalize_utxos(utxos)
         eligible_utxos = [
-            utxo
-            for utxo in self.normalize_utxos(utxos)
-            if _utxo_outpoint(utxo) not in reserved
+            utxo for utxo in normalized_utxos if _utxo_outpoint(utxo) not in reserved
         ]
         if not eligible_utxos:
+            reserved_count = len(normalized_utxos) - len(eligible_utxos)
+            if normalized_utxos and reserved_count > 0:
+                raise WaitNextBlockError(
+                    {
+                        "action_required": "wait_next_block",
+                        "reason": "all_spendable_utxos_reserved",
+                        "fetched_utxos": len(utxos),
+                        "spendable_utxos": len(normalized_utxos),
+                        "reserved_utxos": reserved_count,
+                        "available_utxos": 0,
+                        "spendable_zhc_before_reservations": str(_from_sats(_spendable_total_sat(normalized_utxos))),
+                        "available_zhc_after_reservations": "0.00000000",
+                    }
+                )
             raise ValueError(f"No suitable UTXOs available. Total UTXOs: {len(utxos)}")
 
         min_fee = max(_as_decimal(min_fee), MIN_RECOMMENDED_FEE)
@@ -644,6 +760,22 @@ class ZHCashRPC:
         extra_fee = _as_decimal(self.extra_fee if extra_fee is None else extra_fee)
         required = _as_decimal(amount) + min_fee + admin_fee + extra_fee
         target_sat = _to_sats(required)
+        spendable_sat = _spendable_total_sat(normalized_utxos)
+        available_sat = _spendable_total_sat(eligible_utxos)
+        if spendable_sat >= target_sat and available_sat < target_sat:
+            raise WaitNextBlockError(
+                {
+                    "action_required": "wait_next_block",
+                    "reason": "reserved_utxo_required_for_new_transaction",
+                    "fetched_utxos": len(utxos),
+                    "spendable_utxos": len(normalized_utxos),
+                    "reserved_utxos": len(normalized_utxos) - len(eligible_utxos),
+                    "available_utxos": len(eligible_utxos),
+                    "required_zhc": str(required),
+                    "spendable_zhc_before_reservations": str(_from_sats(spendable_sat)),
+                    "available_zhc_after_reservations": str(_from_sats(available_sat)),
+                }
+            )
         selected = _select_optimal_coins(eligible_utxos, target_sat, _to_sats(DUST_CHANGE))
         if not selected:
             total_available = sum(_as_decimal(utxo["amount"]) for utxo in eligible_utxos)
@@ -857,6 +989,15 @@ class ZHCashRPC:
                 return send_result
             logger.info(f"Transaction sent successfully. TXID: {send_result['tx_id']}")
             return send_result
+        except WaitNextBlockError as e:
+            self._release_utxos(selected_utxos)
+            logger.warning("ZHC send is waiting for next block: %s", e.diagnostics)
+            return {
+                "status": "error",
+                "reason": WAIT_NEXT_BLOCK_MESSAGE,
+                "action_required": "wait_next_block",
+                "diagnostics": e.diagnostics,
+            }
         except Exception as e:
             self._release_utxos(selected_utxos)
             logger.error("Error sending ZHC: %s", e)
@@ -933,6 +1074,15 @@ class ZHCashRPC:
             logger.info(f"Contract transaction sent successfully. TXID: {send_result['tx_id']}")
             send_result["input_total"] = str(selected_amount)
             return send_result
+        except WaitNextBlockError as e:
+            self._release_utxos(selected_utxos)
+            logger.warning("Contract send is waiting for next block: %s", e.diagnostics)
+            return {
+                "status": "error",
+                "reason": WAIT_NEXT_BLOCK_MESSAGE,
+                "action_required": "wait_next_block",
+                "diagnostics": e.diagnostics,
+            }
         except Exception as e:
             self._release_utxos(selected_utxos)
             logger.error("Error sending to contract: %s", e)
@@ -1069,35 +1219,86 @@ class ZHCashRPC:
             logger.warning("Could not fetch UTXO count for %s: %s", address, exc)
             return 0
 
-    async def getbalance(self, address):
-        height = await self._current_block_height_for_reservations()
+    def _extract_address_balance_view(self, data: Dict[str, Any]) -> Dict[str, Decimal]:
+        confirmed_sat = int(data.get("balance") or data.get("confirmedBalance") or data.get("confirmed_balance") or 0)
+        pending_raw = (
+            data.get("unconfirmedBalance")
+            if "unconfirmedBalance" in data
+            else data.get("unconfirmed_balance")
+            if "unconfirmed_balance" in data
+            else data.get("pending")
+            if "pending" in data
+            else 0
+        )
+        pending_sat = int(pending_raw or 0)
+        visible_sat = confirmed_sat + max(0, pending_sat)
+        return {
+            "balance": _from_sats(visible_sat),
+            "confirmed_zhc": _from_sats(confirmed_sat),
+            "pending_zhc": _from_sats(pending_sat),
+        }
+
+    async def getbalance(self, address, force_refresh: bool = False):
+        height = getattr(self, "last_block_height", None) or self.sqlite_cache.get_last_block_height()
+        cached_sqlite = self.sqlite_cache.get_balance(address)
+        if not force_refresh and cached_sqlite:
+            cached_height = int(cached_sqlite.get("height") or 0)
+            known_height = height
+            if not known_height or cached_height >= int(known_height):
+                cached_sqlite["cached"] = True
+                return cached_sqlite
+        if force_refresh and cached_sqlite and not self.sqlite_cache.can_force_refresh(
+            address,
+            self.config.force_refresh_seconds,
+        ):
+            cached_sqlite["cached"] = True
+            cached_sqlite["throttled"] = True
+            cached_sqlite["min_force_refresh_seconds"] = self.config.force_refresh_seconds
+            return cached_sqlite
+        if height is None:
+            height = await self._current_block_height_for_reservations()
         if not hasattr(self, "balance_cache"):
             self.balance_cache = {}
         cached = self.balance_cache.get(address)
-        if height is not None and cached and cached.get("height") == height:
+        if not force_refresh and height is not None and cached and cached.get("height") == height:
             return {
                 "status": "ok",
                 "balance": cached["balance"],
+                "confirmed_balance": cached.get("confirmed_zhc"),
+                "pending_balance": cached.get("pending_zhc"),
                 "utxo_len": cached.get("utxo_len", 0),
                 "height": height,
                 "cached": True,
             }
         try:
-            balance = await self.zero_rpc.get_balance(address)
-            if isinstance(balance, dict) and balance.get("status") == "error":
-                raise RuntimeError(balance.get("reason", "ZeroScan balance failed"))
+            raw_address = await self.zero_rpc._request_json("GET", f"/address/{address}")
+            if isinstance(raw_address, dict) and raw_address.get("status") == "error":
+                raise RuntimeError(raw_address.get("reason", "ZeroScan balance failed"))
+            if not isinstance(raw_address, dict):
+                raise RuntimeError(f"Unexpected ZeroScan address response: {raw_address}")
+            balance_view = self._extract_address_balance_view(raw_address)
             utxo_len = await self._utxo_count(address)
             nfts = await self.zero_rpc.get_nft_balances(address)
-            if height is not None:
-                self.balance_cache[address] = {"height": height, "balance": balance, "utxo_len": utxo_len}
-            return {
+            payload = {
                 "status": "ok",
-                "balance": balance,
+                "balance": balance_view["balance"],
+                "confirmed_balance": balance_view["confirmed_zhc"],
+                "pending_balance": balance_view["pending_zhc"],
                 "utxo_len": utxo_len,
                 "nfts": nfts,
                 "height": height,
                 "cached": False,
             }
+            if height is not None:
+                self.balance_cache[address] = {
+                    "height": height,
+                    "balance": balance_view["balance"],
+                    "confirmed_zhc": balance_view["confirmed_zhc"],
+                    "pending_zhc": balance_view["pending_zhc"],
+                    "utxo_len": utxo_len,
+                }
+            self.sqlite_cache.put_balance(address, payload, height)
+            return payload
         except Exception as e:
             logger.error("ZeroScan balance lookup failed, falling back to scantxoutset: %s", e)
         try:
@@ -1105,15 +1306,19 @@ class ZHCashRPC:
             balance = res['total_amount']
             unspents = res.get('unspents', [])
             utxo_len = len(unspents) if isinstance(unspents, list) else 0
-            if height is not None:
-                self.balance_cache[address] = {"height": height, "balance": balance, "utxo_len": utxo_len}
-            return {
+            payload = {
                 "status": "ok",
                 "balance": balance,
+                "confirmed_balance": balance,
+                "pending_balance": Decimal("0"),
                 "utxo_len": utxo_len,
                 "height": height,
                 "cached": False,
             }
+            if height is not None:
+                self.balance_cache[address] = {"height": height, "balance": balance, "utxo_len": utxo_len}
+            self.sqlite_cache.put_balance(address, payload, height)
+            return payload
         except Exception as e:
             logger.exception("scantxoutset balance lookup failed")
             return {"status": "error", "reason": str(e)}
