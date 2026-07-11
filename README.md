@@ -60,7 +60,7 @@ Run a one-off script without manually creating a venv:
 uv run --with zhlink python your_script.py
 ```
 
-### Install Directly From GitHub
+### Install Latest From GitHub
 
 Latest `main` branch:
 
@@ -78,13 +78,6 @@ Inside a `uv` project:
 
 ```bash
 uv add git+https://github.com/zerohourcash/zhlink.git
-```
-
-Install a fixed release tag:
-
-```bash
-pip install "git+https://github.com/zerohourcash/zhlink.git@vX.Y.Z"
-uv pip install "git+https://github.com/zerohourcash/zhlink.git@vX.Y.Z"
 ```
 
 ### Verify Install
