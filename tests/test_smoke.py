@@ -427,6 +427,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "MASS_SEND_TEMPLATE_NAMES",
                 "MassRecipient",
                 "MassSendPlan",
+                "UsdzReceiverConfig",
                 "WaitNextBlockError",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
@@ -437,7 +438,9 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "async_send_zhc",
                 "call_contract",
                 "create_address",
+                "create_usdz_receiver_address",
                 "create_wallet",
+                "delete_usdz_receiver_address",
                 "derive_bip39_zhc_wallet",
                 "estimate_mass_send",
                 "force_refresh_balance",
@@ -448,10 +451,12 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "get_mass_send_template",
                 "load_mass_send_plan",
                 "prepare_mass_send_utxos",
+                "run_usdz_receiver",
                 "send_mass",
                 "send_to_contract",
                 "send_usdz_gas_free",
                 "send_zhc",
+                "usdz_receiver_status",
                 "validate_bip39_mnemonic",
                 "wait_for_next_block",
                 "watch_balance",
@@ -465,6 +470,9 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.get_mass_send_template))
         self.assertTrue(callable(zhlink.async_get_balance))
         self.assertTrue(callable(zhlink.watch_balance))
+        self.assertTrue(callable(zhlink.run_usdz_receiver))
+        self.assertTrue(callable(zhlink.create_usdz_receiver_address))
+        self.assertTrue(callable(zhlink.delete_usdz_receiver_address))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -656,11 +664,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             )
             self.assertTrue(
                 "Edit " in completed.stdout
-                or "Usage:" in completed.stdout,
+                or "created receiver:" in completed.stdout
+                or "receiver database:" in completed.stdout,
                 completed.stdout,
             )
 
-    def test_receiver_delete_command_is_safe_for_missing_address(self) -> None:
+    def test_receiver_delete_function_is_safe_for_missing_address(self) -> None:
+        import zhlink
+
         repo = Path(__file__).resolve().parents[1]
         receiver_db = repo / ".zhlink-usdz-receiver.sqlite3"
         backup = receiver_db.with_suffix(".sqlite3.test-backup")
@@ -669,25 +680,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         if receiver_db.exists():
             receiver_db.replace(backup)
         try:
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(repo / "examples" / "usdz_receiver_service.py"),
-                    "delete",
-                    "ZMissingAddressForSmokeTest",
-                ],
-                check=True,
-                text=True,
-                capture_output=True,
-                cwd=repo,
-                env={"PYTHONDONTWRITEBYTECODE": "1"},
-            )
+            config = zhlink.UsdzReceiverConfig(db_path=receiver_db)
+            deleted = zhlink.delete_usdz_receiver_address("ZMissingAddressForSmokeTest", config)
         finally:
             if receiver_db.exists():
                 receiver_db.unlink()
             if backup.exists():
                 backup.replace(receiver_db)
-        self.assertIn("not found:", completed.stdout)
+        self.assertFalse(deleted)
 
 
 if __name__ == "__main__":

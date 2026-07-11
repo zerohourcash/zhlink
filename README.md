@@ -257,20 +257,51 @@ With `FLAG_SEND_REAL_TX=True`, the example broadcasts the real forwarding
 transaction. With `FLAG_SEND_REAL_TX=False`, it only builds/preflights and does
 not broadcast.
 
-For a long-running receiver, create a new deposit address only when your
-application receives a new deposit request:
+For a long-running receiver, use the high-level receiver API. Heavy work is
+handled inside the library: SQLite state, WSS watching, balance checks,
+gas-free forwarding, and optional cleanup.
 
-```bash
-python examples/usdz_receiver_service.py new
+```python
+from decimal import Decimal
+from pathlib import Path
+from zhlink import UsdzReceiverConfig, run_usdz_receiver
+
+config = UsdzReceiverConfig(
+    admin_address="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
+    admin_gas_wif="K...",
+    min_usdz=Decimal("0.00000001"),
+    send_real_tx=True,
+    delete_after_forward=False,
+    db_path=Path(".zhlink-usdz-receiver.sqlite3"),
+)
+
+run_usdz_receiver(action="status", config=config)
 ```
 
-The generated address is stored in `.zhlink-usdz-receiver.sqlite3` in the
-library root. Then run the receiver service. It watches already-created active
-addresses through one shared WSS hub and forwards received USDZ to the admin
-address:
+Create a new deposit address only when your application receives a new deposit
+request:
+
+```python
+row = run_usdz_receiver(action="new", config=config)
+print(row["address"])
+```
+
+Start the receiver service:
+
+```python
+run_usdz_receiver(action="serve", config=config)
+```
+
+Delete a receiver address after use:
+
+```python
+run_usdz_receiver(action="delete", config=config, delete_address="Z...")
+```
+
+The standalone example keeps only this top-level logic:
 
 ```bash
-python examples/usdz_receiver_service.py serve
+python examples/usdz_receiver_service.py
 ```
 
 `examples/usdz_receiver_service.py` is production-oriented by default:
@@ -285,28 +316,7 @@ a local dry-run/preflight without broadcasting. All production variables are
 constants at the top of the example file.
 
 The service does not pre-generate addresses. It only watches addresses that were
-created by explicit `new` requests. Receiver state is stored in
-`.zhlink-usdz-receiver.sqlite3` in the same library root, so running the script
-from another working directory still uses the same receiver database.
-
-To delete a receiver address and its private key from the local SQLite state:
-
-```bash
-python examples/usdz_receiver_service.py delete Z...
-```
-
-To delete receiver addresses automatically after a successful live forward:
-
-```bash
-python examples/usdz_receiver_service.py serve
-```
-
-For automatic cleanup after successful forwarding, set this constant in the
-file:
-
-```python
-DELETE_AFTER_FORWARD = True
-```
+created by explicit `new` requests.
 
 When a transaction touching the receiver address appears before confirmation,
 the service prints:
@@ -576,7 +586,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.17`
+Current package version: `0.1.18`
 
 Release flow:
 
