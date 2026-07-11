@@ -14,6 +14,7 @@ from .address import BitcoinAddress
 from .cache import SQLiteBalanceCache
 from .config import ZHLinkConfig
 from .errors import WAIT_NEXT_BLOCK_MESSAGE, WaitNextBlockError
+from .realtime import ZeroScanWebSocketHub, get_realtime_hub
 from .signer import sign_raw_transaction_with_key
 from .zeroscan import ZeroScanRPC
 
@@ -289,6 +290,9 @@ class ZHCashRPC:
         self.block_ws_active_url: Optional[str] = None
         self.block_ws_task: Optional[asyncio.Task] = None
         self.block_poll_task: Optional[asyncio.Task] = None
+        self.realtime_hub: Optional[ZeroScanWebSocketHub] = None
+        self.realtime_unsubscribers: List[Callable[[], None]] = []
+        self.realtime_address_unsubscribers: Dict[str, Callable[[], None]] = {}
         self.utxo_lock = asyncio.Lock()
         self.scan_lock = asyncio.Lock()  # Лок для предотвращения повторного вызова
         self.balance_subscriptions: Dict[str, List[BalanceCallback]] = {}
@@ -317,9 +321,34 @@ class ZHCashRPC:
         self.balance_cache.clear()
         self.sqlite_cache.set_last_block_height(height)
         logger.info("New ZHCash block from websocket: %s %s", height, block_hash)
-        if getattr(self, "balance_subscriptions", None):
-            asyncio.create_task(self._refresh_subscribed_balances(height))
         return True
+
+    async def _handle_realtime_block(self, payload: Dict[str, Any]) -> None:
+        self._remember_block_tip(payload)
+
+    async def _handle_realtime_address(self, payload: Dict[str, Any]) -> None:
+        address = str(payload.get("address") or "").strip()
+        if not address:
+            return
+        height = int(
+            payload.get("height")
+            or payload.get("h")
+            or payload.get("payload", {}).get("height")
+            or 0
+        )
+        try:
+            snapshot = await self.getbalance(address, force_refresh=True)
+            snapshot["realtime"] = True
+            snapshot["event"] = payload
+        except Exception as exc:
+            snapshot = {
+                "status": "error",
+                "reason": str(exc),
+                "height": height or self.last_block_height,
+                "address": address,
+                "event": payload,
+            }
+        await self._notify_balance_subscribers(address, snapshot)
 
     async def _refresh_subscribed_balances(self, height: int) -> None:
         for address, callbacks in list(getattr(self, "balance_subscriptions", {}).items()):
@@ -340,6 +369,16 @@ class ZHCashRPC:
                 except Exception as exc:
                     logger.warning("Balance subscriber failed for %s: %s", address, exc)
 
+    async def _notify_balance_subscribers(self, address: str, snapshot: Dict[str, Any]) -> None:
+        callbacks = list(getattr(self, "balance_subscriptions", {}).get(address, ()))
+        for callback in callbacks:
+            try:
+                result = callback(address, snapshot)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception as exc:
+                logger.warning("Balance subscriber failed for %s: %s", address, exc)
+
     def subscribe_balance(self, address: str, callback: BalanceCallback) -> Callable[[], None]:
         """Subscribe to cached balance updates for one address.
 
@@ -349,6 +388,11 @@ class ZHCashRPC:
 
         callbacks = self.balance_subscriptions.setdefault(address, [])
         callbacks.append(callback)
+        if self.realtime_hub and address not in self.realtime_address_unsubscribers:
+            self.realtime_address_unsubscribers[address] = self.realtime_hub.add_address_callback(
+                address,
+                self._handle_realtime_address,
+            )
 
         def unsubscribe() -> None:
             current = self.balance_subscriptions.get(address, [])
@@ -356,26 +400,36 @@ class ZHCashRPC:
                 current.remove(callback)
             if not current:
                 self.balance_subscriptions.pop(address, None)
+                address_unsub = self.realtime_address_unsubscribers.pop(address, None)
+                if address_unsub:
+                    address_unsub()
 
         return unsubscribe
 
     async def start_block_watch(self) -> bool:
-        if (
-            (self.block_ws_task and not self.block_ws_task.done())
-            or (self.block_poll_task and not self.block_poll_task.done())
-        ):
+        if self.realtime_hub and (self.block_poll_task and not self.block_poll_task.done()):
             return True
-        try:
-            import aiohttp  # type: ignore
-        except Exception as exc:
-            logger.warning("Block websocket disabled: aiohttp is unavailable: %s", exc)
+        self.realtime_hub = get_realtime_hub(tuple(self.block_ws_urls))
+        self.realtime_unsubscribers.append(
+            self.realtime_hub.add_block_callback(self._handle_realtime_block)
+        )
+        for address in list(self.balance_subscriptions):
+            if address not in self.realtime_address_unsubscribers:
+                self.realtime_address_unsubscribers[address] = (
+                    self.realtime_hub.add_address_callback(address, self._handle_realtime_address)
+                )
+        if not self.block_poll_task or self.block_poll_task.done():
             self.block_poll_task = asyncio.create_task(self._block_poll_loop())
-            return True
-        self.block_ws_task = asyncio.create_task(self._block_ws_loop(aiohttp))
-        self.block_poll_task = asyncio.create_task(self._block_poll_loop())
         return True
 
     async def stop_block_watch(self) -> None:
+        for unsubscribe in list(self.realtime_unsubscribers):
+            unsubscribe()
+        self.realtime_unsubscribers.clear()
+        for unsubscribe in list(self.realtime_address_unsubscribers.values()):
+            unsubscribe()
+        self.realtime_address_unsubscribers.clear()
+        self.realtime_hub = None
         for task in (self.block_ws_task, self.block_poll_task):
             if not task:
                 continue

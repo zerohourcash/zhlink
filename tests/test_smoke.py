@@ -30,6 +30,7 @@ from zhlink.mnemonic import (
 )
 from zhlink.signer import sign_raw_transaction_with_key
 from zhlink.rpc import WaitNextBlockError, ZHCashRPC
+from zhlink.realtime import ZeroScanWebSocketHub, get_realtime_hub
 from zhlink.zeroscan import ZeroScanRPC
 from zhc_rawtx import ZHC
 from zhc_rawtx import GasFreeStore, consolidate_utxos, send_usdz_gas_freee, split_largest_utxo
@@ -325,6 +326,41 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
             self.assertEqual(ordered[0], 1)
         finally:
             asyncio.run(client.close())
+
+    def test_realtime_hub_is_shared_per_event_loop_and_url_set(self) -> None:
+        async def run() -> None:
+            urls = ("wss://ws.zeroscan.st/ws",)
+            first = get_realtime_hub(urls)
+            second = get_realtime_hub(urls)
+            self.assertIs(first, second)
+            await first.close()
+
+        asyncio.run(run())
+
+    def test_realtime_hub_dispatches_address_events_to_matching_subscribers(self) -> None:
+        async def run() -> None:
+            hub = ZeroScanWebSocketHub(("wss://ws.zeroscan.st/ws",))
+            received: list[dict[str, object]] = []
+
+            def callback(payload):
+                received.append(payload)
+
+            unsubscribe = hub.add_address_callback(ADMIN_ADDRESS, callback)
+            if hub.task:
+                hub.task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await hub.task
+                hub.task = None
+            await hub._emit_address({"type": "address:transaction", "address": RECIPIENT_ADDRESS})
+            await hub._emit_address({"type": "address:transaction", "address": ADMIN_ADDRESS})
+            unsubscribe()
+
+            self.assertEqual(len(received), 1)
+            self.assertEqual(received[0]["address"], ADMIN_ADDRESS)
+
+        import contextlib
+
+        asyncio.run(run())
 
 
 class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):

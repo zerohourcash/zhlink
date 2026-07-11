@@ -192,11 +192,24 @@ async def main():
 asyncio.run(main())
 ```
 
-Block detection uses the best available channel:
+Realtime detection uses the best available channel:
 
-1. WSS block stream from configured `block_ws_urls`;
+1. one shared WSS connection from configured `block_ws_urls`;
 2. ZeroScan `/info` polling if WSS is interrupted;
 3. public RPC `getblockcount` fallback if ZeroScan is unavailable.
+
+The default primary endpoint is:
+
+```text
+wss://ws.zeroscan.st/ws
+```
+
+`zhlink` multiplexes block and address subscriptions over one shared WebSocket
+hub per asyncio event loop. Subscribing 100 addresses does not create 100
+sockets; it sends address subscriptions through the same connection and refreshes
+only addresses that receive realtime transaction events. WSS is an accelerator,
+not a hard dependency: if it disconnects, cached state, ZeroScan HTTP and public
+RPC fallback continue to work.
 
 Normal `get_balance()` reads SQLite when the cached snapshot is still valid.
 Use `force_refresh_balance()` when the user explicitly presses refresh; the
