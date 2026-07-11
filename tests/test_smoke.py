@@ -384,6 +384,29 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
             {"type": "subscribe", "channel": "address", "address": ADMIN_ADDRESS},
         )
 
+    def test_realtime_hub_key_includes_degradation_settings(self) -> None:
+        async def run() -> None:
+            urls = ("wss://ws.zeroscan.st/ws",)
+            first = get_realtime_hub(
+                urls,
+                address_ttl_seconds=3600,
+                max_failures=3,
+                cooldown_seconds=60,
+            )
+            second = get_realtime_hub(
+                urls,
+                address_ttl_seconds=43200,
+                max_failures=5,
+                cooldown_seconds=120,
+            )
+            self.assertIsNot(first, second)
+            self.assertEqual(second.max_failures, 5)
+            self.assertEqual(second.cooldown_seconds, 120)
+            await first.close()
+            await second.close()
+
+        asyncio.run(run())
+
 
 class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
     def test_new_zhlink_facade_is_small_and_beginner_friendly(self) -> None:
@@ -452,8 +475,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertGreater(len(cfg.public_rpc_urls), 0)
 
     def test_config_allows_long_lived_websocket_address_ttl(self) -> None:
-        cfg = ZHLinkConfig.public_network(address_subscription_ttl_seconds=12 * 60 * 60)
+        cfg = ZHLinkConfig.public_network(
+            address_subscription_ttl_seconds=12 * 60 * 60,
+            ws_max_failures=5,
+            ws_cooldown_seconds=120,
+        )
         self.assertEqual(cfg.address_subscription_ttl_seconds, 43200)
+        self.assertEqual(cfg.ws_max_failures, 5)
+        self.assertEqual(cfg.ws_cooldown_seconds, 120)
 
     def test_top_level_import_does_not_require_httpx_rpc_stack(self) -> None:
         self.assertEqual(DEFAULT_USDZ_CONTRACT, "a48d0ee7365ce1add8e595de4d54344239f8ca28")

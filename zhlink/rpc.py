@@ -321,6 +321,8 @@ class ZHCashRPC:
         self.balance_cache.clear()
         self.sqlite_cache.set_last_block_height(height)
         logger.info("New ZHCash block from websocket: %s %s", height, block_hash)
+        if payload.get("source") == "poll" and getattr(self, "balance_subscriptions", None):
+            asyncio.create_task(self._refresh_subscribed_balances(height))
         return True
 
     async def _handle_realtime_block(self, payload: Dict[str, Any]) -> None:
@@ -412,6 +414,8 @@ class ZHCashRPC:
         self.realtime_hub = get_realtime_hub(
             tuple(self.block_ws_urls),
             self.config.address_subscription_ttl_seconds,
+            self.config.ws_max_failures,
+            self.config.ws_cooldown_seconds,
         )
         self.realtime_unsubscribers.append(
             self.realtime_hub.add_block_callback(self._handle_realtime_block)

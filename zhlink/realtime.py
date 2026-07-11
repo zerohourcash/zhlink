@@ -21,9 +21,17 @@ class ZeroScanWebSocketHub:
     HTTP/RPC polling remains the fallback when WSS is unavailable.
     """
 
-    def __init__(self, urls: tuple[str, ...], address_ttl_seconds: float = 3600.0):
+    def __init__(
+        self,
+        urls: tuple[str, ...],
+        address_ttl_seconds: float = 3600.0,
+        max_failures: int = 3,
+        cooldown_seconds: float = 60.0,
+    ):
         self.urls = tuple(urls)
         self.address_ttl_seconds = max(60.0, float(address_ttl_seconds))
+        self.max_failures = max(1, int(max_failures))
+        self.cooldown_seconds = max(5.0, float(cooldown_seconds))
         self.block_callbacks: set[JsonCallback] = set()
         self.address_callbacks: dict[str, set[JsonCallback]] = defaultdict(set)
         self.address_last_used: dict[str, float] = {}
@@ -32,6 +40,8 @@ class ZeroScanWebSocketHub:
         self._send_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.active_url: str | None = None
         self._stopping = False
+        self.consecutive_failures = 0
+        self.disabled_until = 0.0
 
     def add_block_callback(self, callback: JsonCallback) -> Callable[[], None]:
         self.block_callbacks.add(callback)
@@ -147,6 +157,10 @@ class ZeroScanWebSocketHub:
 
         delay = 1.0
         while not self._stopping:
+            now = time.monotonic()
+            if self.disabled_until > now:
+                await asyncio.sleep(min(self.disabled_until - now, 30.0))
+                continue
             connected = False
             for url in self.urls:
                 if self._stopping:
@@ -161,7 +175,16 @@ class ZeroScanWebSocketHub:
                     logger.warning("ZeroScan WSS failed for %s: %s", url, exc)
                     self.active_url = None
             if not connected:
+                self.consecutive_failures += 1
                 logger.warning("All ZeroScan WSS endpoints failed; HTTP/RPC fallback remains active.")
+                if self.consecutive_failures >= self.max_failures:
+                    self.disabled_until = time.monotonic() + self.cooldown_seconds
+                    logger.warning(
+                        "ZeroScan WSS cooldown for %.1fs after %s failed rounds; HTTP/RPC fallback remains active.",
+                        self.cooldown_seconds,
+                        self.consecutive_failures,
+                    )
+                    self.consecutive_failures = 0
             await asyncio.sleep(delay)
             delay = min(delay * 2, 30.0)
 
@@ -170,6 +193,8 @@ class ZeroScanWebSocketHub:
         async with aiohttp_module.ClientSession(timeout=timeout) as session:
             async with session.ws_connect(url, heartbeat=30) as ws:
                 self.active_url = url
+                self.consecutive_failures = 0
+                self.disabled_until = 0.0
                 self.server_subscribed_addresses.clear()
                 await ws.send_json({"type": "subscribe", "channel": "blocks"})
                 self.prune_stale_addresses()
@@ -213,17 +238,30 @@ class ZeroScanWebSocketHub:
             self.prune_stale_addresses()
 
 
-_HUBS: dict[tuple[int, tuple[str, ...]], ZeroScanWebSocketHub] = {}
+_HUBS: dict[tuple[Any, ...], ZeroScanWebSocketHub] = {}
 
 
 def get_realtime_hub(
     urls: tuple[str, ...],
     address_ttl_seconds: float = 3600.0,
+    max_failures: int = 3,
+    cooldown_seconds: float = 60.0,
 ) -> ZeroScanWebSocketHub:
     loop = asyncio.get_running_loop()
-    key = (id(loop), tuple(urls))
+    key = (
+        id(loop),
+        tuple(urls),
+        int(max(60.0, float(address_ttl_seconds))),
+        int(max(1, int(max_failures))),
+        int(max(5.0, float(cooldown_seconds))),
+    )
     hub = _HUBS.get(key)
     if hub is None:
-        hub = ZeroScanWebSocketHub(tuple(urls), address_ttl_seconds)
+        hub = ZeroScanWebSocketHub(
+            tuple(urls),
+            address_ttl_seconds,
+            max_failures,
+            cooldown_seconds,
+        )
         _HUBS[key] = hub
     return hub

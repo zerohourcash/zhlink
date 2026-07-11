@@ -226,11 +226,15 @@ from zhlink import ZHLinkConfig
 
 config = ZHLinkConfig.public_network(
     address_subscription_ttl_seconds=12 * 60 * 60,
+    ws_max_failures=3,
+    ws_cooldown_seconds=60,
 )
 ```
 
-WSS is an accelerator, not a hard dependency: if it disconnects, cached state,
-ZeroScan HTTP and public RPC fallback continue to work.
+WSS is an accelerator, not a hard dependency. If all WSS endpoints fail several
+times, the WSS hub enters a short cooldown and the watcher keeps working through
+block polling, ZeroScan HTTP and public RPC fallback. When the cooldown expires,
+WSS reconnects automatically.
 
 Normal `get_balance()` reads SQLite when the cached snapshot is still valid.
 Use `force_refresh_balance()` when the user explicitly presses refresh; the
