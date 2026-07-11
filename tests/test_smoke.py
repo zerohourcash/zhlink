@@ -247,6 +247,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             [
                 "Balance",
                 "Bip39Wallet",
+                "MASS_SEND_TEMPLATE_NAMES",
                 "MassRecipient",
                 "MassSendPlan",
                 "ZHLinkConfig",
@@ -259,6 +260,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "generate_bip39_mnemonic",
                 "generate_bip39_zhc_wallet",
                 "get_balance",
+                "get_mass_send_template",
                 "load_mass_send_plan",
                 "prepare_mass_send_utxos",
                 "send_mass",
@@ -267,12 +269,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "send_zhc",
                 "validate_bip39_mnemonic",
                 "wait_for_next_block",
+                "write_mass_send_template",
             ],
         )
         self.assertTrue(callable(zhlink.create_address))
         self.assertTrue(callable(zhlink.call_contract))
         self.assertTrue(callable(zhlink.send_to_contract))
         self.assertTrue(callable(zhlink.send_mass))
+        self.assertTrue(callable(zhlink.get_mass_send_template))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -357,6 +361,20 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             mass._fetch_zeroscan = original_fetch
         self.assertTrue(estimate["need_reorg"])
         self.assertEqual(estimate["confirmed_utxo_count"], 1)
+
+    def test_bundled_mass_send_templates_are_available(self) -> None:
+        import zhlink
+
+        for name in ("usdz", "zhc", "zrc20"):
+            template = zhlink.get_mass_send_template(name)
+            plan = zhlink.load_mass_send_plan(template)
+            self.assertGreater(plan.required_tx_count, 0)
+            self.assertEqual(template["asset"].upper(), plan.asset)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = zhlink.write_mass_send_template("usdz", Path(tmp) / "mass_send.json")
+            self.assertTrue(output.exists())
+            self.assertEqual(zhlink.load_mass_send_plan(output).asset, "USDZ")
 
     def test_prepare_mass_send_utxos_builds_split_without_broadcast(self) -> None:
         import zhlink.mass as mass

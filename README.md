@@ -25,13 +25,52 @@ Recommended Python:
 - Python `3.12` should work.
 - Python `3.9` and older are not supported.
 
-From PyPI:
+### Install With pip
+
+Create a virtual environment and install from PyPI:
 
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
 pip install zhlink
 ```
 
-From this folder:
+### Install With uv
+
+Into the current Python environment:
+
+```bash
+uv pip install zhlink
+```
+
+Inside a `uv` project with `pyproject.toml`:
+
+```bash
+uv add zhlink
+```
+
+Run a one-off script without manually creating a venv:
+
+```bash
+uv run --with zhlink python your_script.py
+```
+
+### Verify Install
+
+```bash
+python - <<'PY'
+import zhlink
+
+wallet = zhlink.create_address()
+print(wallet.address)
+print(zhlink.get_mass_send_template("usdz")["asset"])
+PY
+```
+
+### Install From Source
+
+From this repository folder:
 
 ```bash
 cd /root/wallet/zhlink
@@ -40,7 +79,7 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-For direct local use without install:
+For direct local use without installing:
 
 ```bash
 cd /root/wallet/zhlink
@@ -146,6 +185,17 @@ broadcasts through ZeroScan and falls back to RPC broadcast.
 
 `send_mass` sends ZHC, USDZ or any ZRC-20 token to many recipients from a JSON
 plan.
+
+Bundled templates are available directly from the package:
+
+```python
+from zhlink import get_mass_send_template, write_mass_send_template
+
+print(get_mass_send_template("usdz"))
+write_mass_send_template("usdz", "mass_send.json")
+write_mass_send_template("zhc", "mass_send_zhc.json")
+write_mass_send_template("zrc20", "mass_send_zrc20.json")
+```
 
 ```json
 {
@@ -303,8 +353,8 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this

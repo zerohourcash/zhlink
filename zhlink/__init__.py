@@ -23,19 +23,23 @@ from .mnemonic import (
     validate_bip39_mnemonic,
 )
 from .mass import (
+    MASS_SEND_TEMPLATE_NAMES,
     MassRecipient,
     MassSendPlan,
     estimate_mass_send,
+    get_mass_send_template,
     load_mass_send_plan,
     prepare_mass_send_utxos,
     send_mass,
     wait_for_next_block,
+    write_mass_send_template,
 )
 
 __all__ = [
     "Bip39Wallet",
     "Balance",
     "ZHLinkConfig",
+    "MASS_SEND_TEMPLATE_NAMES",
     "MassRecipient",
     "MassSendPlan",
     "admin_gas_wallet_info",
@@ -44,6 +48,7 @@ __all__ = [
     "create_wallet",
     "derive_bip39_zhc_wallet",
     "estimate_mass_send",
+    "get_mass_send_template",
     "generate_bip39_mnemonic",
     "generate_bip39_zhc_wallet",
     "get_balance",
@@ -55,4 +60,5 @@ __all__ = [
     "send_zhc",
     "validate_bip39_mnemonic",
     "wait_for_next_block",
+    "write_mass_send_template",
 ]

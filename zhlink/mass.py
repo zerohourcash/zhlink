@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from importlib import resources
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -27,6 +28,7 @@ DEFAULT_MIN_REORG_OUTPUT_ZHC = Decimal("1")
 DEFAULT_REORG_FEE_SAT = 10_000_000
 DEFAULT_BATCH_DELAY_SECONDS = 2.0
 DEFAULT_BLOCK_POLL_SECONDS = 15.0
+MASS_SEND_TEMPLATE_NAMES = ("usdz", "zhc", "zrc20")
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,29 @@ class MassSendPlan:
     @property
     def required_tx_count(self) -> int:
         return len(self.recipients)
+
+
+def get_mass_send_template(name: str = "usdz") -> dict[str, Any]:
+    """Return a bundled mass-send JSON template as a dict.
+
+    Available names: ``usdz``, ``zhc`` and ``zrc20``.
+    """
+
+    normalized = str(name or "").strip().lower()
+    if normalized not in MASS_SEND_TEMPLATE_NAMES:
+        raise ValueError(f"unknown mass-send template {name!r}; choose one of {', '.join(MASS_SEND_TEMPLATE_NAMES)}")
+    template_path = resources.files("zhlink").joinpath("templates", f"mass_send_{normalized}.json")
+    return json.loads(template_path.read_text(encoding="utf-8"))
+
+
+def write_mass_send_template(name: str, output_path: str | Path) -> Path:
+    """Write a bundled mass-send template to ``output_path`` and return path."""
+
+    data = get_mass_send_template(name)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def load_mass_send_plan(path_or_data: str | Path | Mapping[str, Any]) -> MassSendPlan:
@@ -394,11 +419,14 @@ def send_mass(
 
 
 __all__ = [
+    "MASS_SEND_TEMPLATE_NAMES",
     "MassRecipient",
     "MassSendPlan",
     "estimate_mass_send",
+    "get_mass_send_template",
     "load_mass_send_plan",
     "prepare_mass_send_utxos",
     "send_mass",
     "wait_for_next_block",
+    "write_mass_send_template",
 ]

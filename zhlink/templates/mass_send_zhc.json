@@ -1,0 +1,14 @@
+{
+  "asset": "ZHC",
+  "note": "Example native ZHC mass-send plan. One recipient = one on-chain ZHC transaction.",
+  "recipients": [
+    {
+      "address": "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
+      "amount": "1"
+    },
+    {
+      "address": "ZF8xrYQFkfW2YYuWb6UWhY57TXLt6sgobZ",
+      "amount": "1.5"
+    }
+  ]
+}

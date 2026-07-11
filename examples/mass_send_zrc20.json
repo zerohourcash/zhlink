@@ -1,0 +1,17 @@
+{
+  "asset": "EDS",
+  "token_contract": "dc71958156a945d3071374521e1a7a42f5ba8038",
+  "token_decimals": 8,
+  "gas": 1000000,
+  "note": "Example custom ZRC20 mass-send plan. Replace asset/token_contract/token_decimals for another token.",
+  "recipients": [
+    {
+      "address": "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
+      "amount": "10"
+    },
+    {
+      "address": "ZF8xrYQFkfW2YYuWb6UWhY57TXLt6sgobZ",
+      "amount": "25"
+    }
+  ]
+}
