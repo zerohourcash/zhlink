@@ -1,6 +1,6 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/pypi/v/zhlink.svg)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/pypi/v/zhlink.svg?label=PyPI&cacheSeconds=300&v=0.1.23)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
@@ -659,7 +659,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.22`
+Current package version: `0.1.23`
 
 Release flow:
 
