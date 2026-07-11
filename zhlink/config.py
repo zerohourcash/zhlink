@@ -29,6 +29,7 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_CACHE_PATH = ".zhlink-cache.sqlite3"
 DEFAULT_FORCE_REFRESH_SECONDS = 10.0
 DEFAULT_BLOCK_POLL_SECONDS = 30.0
+DEFAULT_ADDRESS_SUBSCRIPTION_TTL_SECONDS = 3600.0
 
 # Production-test keys requested for gas-free USDZ validation.
 # These are test wallets for controlled sends only.
@@ -62,6 +63,7 @@ class ZHLinkConfig:
     cache_path: str = DEFAULT_CACHE_PATH
     force_refresh_seconds: float = DEFAULT_FORCE_REFRESH_SECONDS
     block_poll_seconds: float = DEFAULT_BLOCK_POLL_SECONDS
+    address_subscription_ttl_seconds: float = DEFAULT_ADDRESS_SUBSCRIPTION_TTL_SECONDS
 
     @classmethod
     def public_network(
@@ -80,6 +82,7 @@ class ZHLinkConfig:
         cache_path: str = DEFAULT_CACHE_PATH,
         force_refresh_seconds: float = DEFAULT_FORCE_REFRESH_SECONDS,
         block_poll_seconds: float = DEFAULT_BLOCK_POLL_SECONDS,
+        address_subscription_ttl_seconds: float = DEFAULT_ADDRESS_SUBSCRIPTION_TTL_SECONDS,
     ) -> "ZHLinkConfig":
         return cls(
             admin_address=admin_address,
@@ -95,4 +98,5 @@ class ZHLinkConfig:
             cache_path=cache_path,
             force_refresh_seconds=force_refresh_seconds,
             block_poll_seconds=block_poll_seconds,
+            address_subscription_ttl_seconds=address_subscription_ttl_seconds,
         )

@@ -409,7 +409,10 @@ class ZHCashRPC:
     async def start_block_watch(self) -> bool:
         if self.realtime_hub and (self.block_poll_task and not self.block_poll_task.done()):
             return True
-        self.realtime_hub = get_realtime_hub(tuple(self.block_ws_urls))
+        self.realtime_hub = get_realtime_hub(
+            tuple(self.block_ws_urls),
+            self.config.address_subscription_ttl_seconds,
+        )
         self.realtime_unsubscribers.append(
             self.realtime_hub.add_block_callback(self._handle_realtime_block)
         )
@@ -1293,6 +1296,8 @@ class ZHCashRPC:
         }
 
     async def getbalance(self, address, force_refresh: bool = False):
+        if self.realtime_hub:
+            self.realtime_hub.touch_address(str(address))
         height = getattr(self, "last_block_height", None) or self.sqlite_cache.get_last_block_height()
         cached_sqlite = self.sqlite_cache.get_balance(address)
         if not force_refresh and cached_sqlite:

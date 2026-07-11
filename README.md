@@ -204,10 +204,16 @@ The default primary endpoint is:
 wss://ws.zeroscan.st/ws
 ```
 
-`zhlink` multiplexes block and address subscriptions over one shared WebSocket
-hub per asyncio event loop. Subscribing 100 addresses does not create 100
-sockets; it sends address subscriptions through the same connection and refreshes
-only addresses that receive realtime transaction events. WSS is an accelerator,
+`zhlink` treats WSS as the primary realtime signal and multiplexes block and
+address subscriptions over one shared WebSocket hub per asyncio event loop.
+Subscribing 100 addresses does not create 100 sockets; it sends address
+subscriptions through the same connection and refreshes only addresses that
+receive realtime transaction events.
+
+Address subscriptions have a default lifetime of one hour. Every `getbalance`
+call or balance subscription touch extends that lifetime. If an address is not
+requested again, `zhlink` sends `unsubscribe` for that address so long-running
+wallet processes do not keep stale subscriptions forever. WSS is an accelerator,
 not a hard dependency: if it disconnects, cached state, ZeroScan HTTP and public
 RPC fallback continue to work.
 

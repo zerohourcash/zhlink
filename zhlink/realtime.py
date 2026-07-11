@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections import defaultdict
 from typing import Any, Awaitable, Callable
 
@@ -20,10 +21,13 @@ class ZeroScanWebSocketHub:
     HTTP/RPC polling remains the fallback when WSS is unavailable.
     """
 
-    def __init__(self, urls: tuple[str, ...]):
+    def __init__(self, urls: tuple[str, ...], address_ttl_seconds: float = 3600.0):
         self.urls = tuple(urls)
+        self.address_ttl_seconds = max(60.0, float(address_ttl_seconds))
         self.block_callbacks: set[JsonCallback] = set()
         self.address_callbacks: dict[str, set[JsonCallback]] = defaultdict(set)
+        self.address_last_used: dict[str, float] = {}
+        self.server_subscribed_addresses: set[str] = set()
         self.task: asyncio.Task | None = None
         self._send_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.active_url: str | None = None
@@ -42,10 +46,8 @@ class ZeroScanWebSocketHub:
     def add_address_callback(self, address: str, callback: JsonCallback) -> Callable[[], None]:
         normalized = str(address).strip()
         self.address_callbacks[normalized].add(callback)
+        self.touch_address(normalized)
         self.ensure_started()
-        self._send_queue.put_nowait(
-            {"type": "subscribe", "channel": "address", "address": normalized}
-        )
 
         def unsubscribe() -> None:
             callbacks = self.address_callbacks.get(normalized)
@@ -53,16 +55,48 @@ class ZeroScanWebSocketHub:
                 callbacks.discard(callback)
                 if not callbacks:
                     self.address_callbacks.pop(normalized, None)
-                    self._send_queue.put_nowait(
-                        {
-                            "type": "unsubscribe",
-                            "channel": "address",
-                            "address": normalized,
-                        }
-                    )
+                    self.address_last_used.pop(normalized, None)
+                    self._queue_address_unsubscribe(normalized)
             self._maybe_stop()
 
         return unsubscribe
+
+    def touch_address(self, address: str) -> None:
+        """Mark an address as active and subscribe it over the current socket."""
+
+        normalized = str(address).strip()
+        if not normalized:
+            return
+        self.address_last_used[normalized] = time.monotonic()
+        self._queue_address_subscribe(normalized)
+
+    def _queue_address_subscribe(self, address: str) -> None:
+        if address in self.server_subscribed_addresses:
+            return
+        self.server_subscribed_addresses.add(address)
+        self._send_queue.put_nowait(
+            {"type": "subscribe", "channel": "address", "address": address}
+        )
+
+    def _queue_address_unsubscribe(self, address: str) -> None:
+        if address not in self.server_subscribed_addresses:
+            return
+        self.server_subscribed_addresses.discard(address)
+        self._send_queue.put_nowait(
+            {"type": "unsubscribe", "channel": "address", "address": address}
+        )
+
+    def prune_stale_addresses(self) -> list[str]:
+        now = time.monotonic()
+        stale = [
+            address
+            for address, last_used in list(self.address_last_used.items())
+            if now - last_used > self.address_ttl_seconds
+        ]
+        for address in stale:
+            self.address_last_used.pop(address, None)
+            self._queue_address_unsubscribe(address)
+        return stale
 
     def ensure_started(self) -> None:
         if self.task and not self.task.done():
@@ -136,12 +170,13 @@ class ZeroScanWebSocketHub:
         async with aiohttp_module.ClientSession(timeout=timeout) as session:
             async with session.ws_connect(url, heartbeat=30) as ws:
                 self.active_url = url
+                self.server_subscribed_addresses.clear()
                 await ws.send_json({"type": "subscribe", "channel": "blocks"})
-                for address in list(self.address_callbacks):
-                    await ws.send_json(
-                        {"type": "subscribe", "channel": "address", "address": address}
-                    )
+                self.prune_stale_addresses()
+                for address in list(self.address_last_used):
+                    self._queue_address_subscribe(address)
                 sender = asyncio.create_task(self._sender(ws))
+                pruner = asyncio.create_task(self._prune_loop())
                 try:
                     async for msg in ws:
                         if msg.type == aiohttp_module.WSMsgType.TEXT:
@@ -159,7 +194,10 @@ class ZeroScanWebSocketHub:
                         ):
                             break
                 finally:
+                    pruner.cancel()
                     sender.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await pruner
                     with contextlib.suppress(asyncio.CancelledError):
                         await sender
 
@@ -168,16 +206,24 @@ class ZeroScanWebSocketHub:
             payload = await self._send_queue.get()
             await ws.send_json(payload)
 
+    async def _prune_loop(self) -> None:
+        interval = min(300.0, max(30.0, self.address_ttl_seconds / 4))
+        while True:
+            await asyncio.sleep(interval)
+            self.prune_stale_addresses()
+
 
 _HUBS: dict[tuple[int, tuple[str, ...]], ZeroScanWebSocketHub] = {}
 
 
-def get_realtime_hub(urls: tuple[str, ...]) -> ZeroScanWebSocketHub:
+def get_realtime_hub(
+    urls: tuple[str, ...],
+    address_ttl_seconds: float = 3600.0,
+) -> ZeroScanWebSocketHub:
     loop = asyncio.get_running_loop()
     key = (id(loop), tuple(urls))
     hub = _HUBS.get(key)
     if hub is None:
-        hub = ZeroScanWebSocketHub(tuple(urls))
+        hub = ZeroScanWebSocketHub(tuple(urls), address_ttl_seconds)
         _HUBS[key] = hub
     return hub
-

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import asyncio
+import time
 from decimal import Decimal
 from pathlib import Path
 
@@ -361,6 +362,27 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
         import contextlib
 
         asyncio.run(run())
+
+    def test_realtime_hub_prunes_stale_address_server_subscriptions(self) -> None:
+        hub = ZeroScanWebSocketHub(("wss://ws.zeroscan.st/ws",), address_ttl_seconds=60)
+        hub.address_last_used[ADMIN_ADDRESS] = time.monotonic() - 61
+        hub.server_subscribed_addresses.add(ADMIN_ADDRESS)
+
+        stale = hub.prune_stale_addresses()
+
+        self.assertEqual(stale, [ADMIN_ADDRESS])
+        self.assertNotIn(ADMIN_ADDRESS, hub.server_subscribed_addresses)
+        self.assertEqual(
+            hub._send_queue.get_nowait(),
+            {"type": "unsubscribe", "channel": "address", "address": ADMIN_ADDRESS},
+        )
+
+        hub.touch_address(ADMIN_ADDRESS)
+        self.assertIn(ADMIN_ADDRESS, hub.server_subscribed_addresses)
+        self.assertEqual(
+            hub._send_queue.get_nowait(),
+            {"type": "subscribe", "channel": "address", "address": ADMIN_ADDRESS},
+        )
 
 
 class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
