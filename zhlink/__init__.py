@@ -45,6 +45,7 @@ from .mass import (
 )
 from .receiver import (
     UsdzReceiverConfig,
+    async_create_and_forward_usdz_deposit,
     async_forward_usdz_deposit,
     async_wait_for_usdz_deposit,
     create_and_forward_usdz_deposit,
@@ -65,6 +66,7 @@ __all__ = [
     "MassRecipient",
     "MassSendPlan",
     "admin_gas_wallet_info",
+    "async_create_and_forward_usdz_deposit",
     "async_force_refresh_balance",
     "async_forward_usdz_deposit",
     "async_get_balance",

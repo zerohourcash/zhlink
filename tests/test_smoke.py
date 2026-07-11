@@ -431,6 +431,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "WaitNextBlockError",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
+                "async_create_and_forward_usdz_deposit",
                 "async_force_refresh_balance",
                 "async_forward_usdz_deposit",
                 "async_get_balance",
@@ -476,6 +477,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.async_get_balance))
         self.assertTrue(callable(zhlink.watch_balance))
         self.assertTrue(callable(zhlink.run_usdz_receiver))
+        self.assertTrue(callable(zhlink.async_create_and_forward_usdz_deposit))
         self.assertTrue(callable(zhlink.create_and_forward_usdz_deposit))
         self.assertTrue(callable(zhlink.create_usdz_receiver_address))
         self.assertTrue(callable(zhlink.delete_usdz_receiver_address))

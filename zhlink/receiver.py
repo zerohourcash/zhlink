@@ -310,7 +310,10 @@ def forward_usdz_deposit(
     return asyncio.run(async_forward_usdz_deposit(address, amount, config))
 
 
-async def _create_and_forward_usdz_deposit_async(config: UsdzReceiverConfig) -> dict[str, Any]:
+async def async_create_and_forward_usdz_deposit(config: UsdzReceiverConfig | None = None) -> dict[str, Any]:
+    """Create one receiver address, wait for USDZ, then forward it gas-free."""
+
+    config = config or UsdzReceiverConfig()
     if config.admin_gas_wif == "":
         raise RuntimeError("Set admin_gas_wif in UsdzReceiverConfig.")
     _init_db(config.db_path)
@@ -326,7 +329,7 @@ async def _create_and_forward_usdz_deposit_async(config: UsdzReceiverConfig) -> 
 def create_and_forward_usdz_deposit(config: UsdzReceiverConfig | None = None) -> dict[str, Any]:
     """Create one receiver address, wait for USDZ, then forward it gas-free."""
 
-    return asyncio.run(_create_and_forward_usdz_deposit_async(config or UsdzReceiverConfig()))
+    return asyncio.run(async_create_and_forward_usdz_deposit(config))
 
 
 async def _service_loop(config: UsdzReceiverConfig) -> None:

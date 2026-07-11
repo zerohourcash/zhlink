@@ -237,13 +237,15 @@ then RPC broadcast fallback.
 
 ### Watch a USDZ deposit and forward it gas-free
 
-The one-shot helper below creates a fresh USDZ receiving address, watches it
-through the shared WSS hub, and forwards the detected USDZ to the admin address
-with `send_usdz_gas_free()`. Heavy watcher/RPC logic stays inside the library.
+The async one-shot helper below creates a fresh USDZ receiving address, watches
+it through the shared WSS hub, and forwards the detected USDZ to the admin
+address with `send_usdz_gas_free()`. Heavy watcher/RPC logic stays inside the
+library.
 
 ```python
+import asyncio
 from decimal import Decimal
-from zhlink import UsdzReceiverConfig, create_and_forward_usdz_deposit
+from zhlink import UsdzReceiverConfig, async_create_and_forward_usdz_deposit
 
 config = UsdzReceiverConfig(
     admin_address="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi",
@@ -252,12 +254,20 @@ config = UsdzReceiverConfig(
     send_real_tx=True,
 )
 
-result = create_and_forward_usdz_deposit(config)
-print(result)
+async def main():
+    result = await async_create_and_forward_usdz_deposit(config)
+    print(result)
+
+asyncio.run(main())
 ```
 
 With `send_real_tx=True`, the helper broadcasts the real forwarding transaction.
 With `send_real_tx=False`, it only builds/preflights and does not broadcast.
+
+Synchronous wrappers are also available for simple scripts:
+`create_and_forward_usdz_deposit()`, `wait_for_usdz_deposit()`, and
+`forward_usdz_deposit()`. Production services should prefer the async API so
+several receiver addresses can be watched in parallel.
 
 For a production receiver, keep the workflow linear: create one deposit address
 for a real request, wait for confirmed USDZ, then forward it gas-free. Heavy
@@ -267,7 +277,10 @@ gas-free forwarding, and optional cleanup.
 Public receiver controls:
 
 - `UsdzReceiverConfig` - one config object for admin wallet, limits, storage and realtime settings;
+- `async_create_and_forward_usdz_deposit(config)` - async one-shot flow for one receiver;
 - `create_and_forward_usdz_deposit(config)` - one-shot flow: create address, wait for USDZ, forward gas-free;
+- `async_wait_for_usdz_deposit(address, config)` - async wait for a stored receiver address;
+- `async_forward_usdz_deposit(address, amount, config)` - async gas-free forward for a detected deposit;
 - `wait_for_usdz_deposit(address, config)` - wait until a stored receiver address receives enough USDZ;
 - `forward_usdz_deposit(address, amount, config)` - forward a detected USDZ deposit with admin-paid gas;
 - `run_usdz_receiver(action="new" | "delete" | "serve", ...)` - optional managed receiver runner;
@@ -281,14 +294,16 @@ callback receives plain dictionaries such as `receiver_created`,
 `receiver_forward_start`, `receiver_forward_ok`, and `receiver_forward_error`.
 
 ```python
+import asyncio
 from decimal import Decimal
 from pathlib import Path
 from pprint import pprint
 from zhlink import (
     UsdzReceiverConfig,
+    async_forward_usdz_deposit,
+    async_wait_for_usdz_deposit,
     create_usdz_receiver_address,
-    forward_usdz_deposit,
-    wait_for_usdz_deposit,
+    usdz_receiver_status,
 )
 
 def on_event(event):
@@ -308,9 +323,16 @@ config = UsdzReceiverConfig(
 receiver = create_usdz_receiver_address(config)
 print("Send USDZ to:", receiver["address"])
 
-amount = wait_for_usdz_deposit(receiver["address"], config)
-result = forward_usdz_deposit(receiver["address"], amount, config)
-print(result)
+async def watch_and_forward(receiver):
+    amount = await async_wait_for_usdz_deposit(receiver["address"], config)
+    result = await async_forward_usdz_deposit(receiver["address"], amount, config)
+    print(result)
+
+async def main():
+    active = usdz_receiver_status(config)["active_receivers"]
+    await asyncio.gather(*(watch_and_forward(receiver) for receiver in active))
+
+asyncio.run(main())
 ```
 
 The standalone production example follows the same flow from start to finish:
@@ -319,10 +341,11 @@ The standalone production example follows the same flow from start to finish:
 python examples/usdz_receiver_service.py
 ```
 
-It creates a receiver address, waits for USDZ, forwards it, and then prints the
-forwarding result. Address deletion is intentionally left as a commented line in
-the example, so your application can decide whether to keep or remove receiver
-history after a successful forward.
+It can create new receiver addresses, loads active receivers from SQLite,
+watches several addresses in parallel with `asyncio.create_task()`, forwards
+confirmed USDZ, and then prints the forwarding result. Address deletion is
+intentionally left as a commented line in the example, so your application can
+decide whether to keep or remove receiver history after a successful forward.
 
 For daemon-style applications, create addresses on explicit user requests and
 then start the service loop:
@@ -619,7 +642,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.20`
+Current package version: `0.1.21`
 
 Release flow:
 
