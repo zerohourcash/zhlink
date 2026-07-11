@@ -577,8 +577,9 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
+VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+git tag "v$VERSION"
+git push origin "v$VERSION"
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this
