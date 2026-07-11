@@ -647,7 +647,11 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 capture_output=True,
                 env={"PYTHONPATH": python_path, "PYTHONDONTWRITEBYTECODE": "1"},
             )
-            self.assertIn("Refusing to send", completed.stdout)
+            self.assertTrue(
+                "Refusing to send" in completed.stdout
+                or "Usage:" in completed.stdout,
+                completed.stdout,
+            )
 
 
 if __name__ == "__main__":

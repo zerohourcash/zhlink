@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sqlite3
+import sys
 import time
 from contextlib import closing
 from decimal import Decimal
@@ -13,8 +14,6 @@ DB_PATH = Path(os.environ.get("ZHLINK_RECEIVER_DB", ".zhlink-usdz-receiver.sqlit
 ADMIN_ADDRESS = os.environ.get("ZHLINK_ADMIN_ADDRESS", "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi")
 ADMIN_GAS_WIF = os.environ.get("ZHLINK_ADMIN_GAS_WIF", "")
 MIN_USDZ = Decimal(os.environ.get("ZHLINK_MIN_USDZ", "0.00000001"))
-ACTIVE_LIMIT = int(os.environ.get("ZHLINK_RECEIVER_ACTIVE", "5"))
-MODE = os.environ.get("ZHLINK_RECEIVER_MODE", "pool").lower()
 RUN_SERVICE = os.environ.get("RUN_USDZ_RECEIVER") == "1"
 RUN_REAL_SEND = os.environ.get("RUN_REAL_SEND") == "1"
 
@@ -92,13 +91,6 @@ def update_address(address: str, **fields) -> None:
         conn.commit()
 
 
-def ensure_active_pool() -> None:
-    target = 1 if MODE == "sequential" else max(1, ACTIVE_LIMIT)
-    active = active_rows()
-    while len(active) < target:
-        active.append(create_receiver_address())
-
-
 async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig) -> None:
     address = row["address"]
     update_address(address, status="forwarding", last_usdz=str(usdz), error=None)
@@ -164,7 +156,6 @@ async def service_loop() -> None:
 
     tasks: dict[str, asyncio.Task] = {}
     while True:
-        ensure_active_pool()
         for row in active_rows():
             address = row["address"]
             if address not in tasks or tasks[address].done():
@@ -179,5 +170,22 @@ async def service_loop() -> None:
         await asyncio.sleep(5)
 
 
+def print_usage() -> None:
+    print("Usage:")
+    print("  python examples/usdz_receiver_service.py new")
+    print("  RUN_USDZ_RECEIVER=1 ZHLINK_ADMIN_GAS_WIF=... python examples/usdz_receiver_service.py serve")
+    print("")
+    print("'new' creates exactly one receiver address on explicit request.")
+    print("'serve' watches already-created active addresses and forwards deposits.")
+
+
 if __name__ == "__main__":
-    asyncio.run(service_loop())
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command == "new":
+        init_db()
+        row = create_receiver_address()
+        print("address:", row["address"])
+    elif command == "serve":
+        asyncio.run(service_loop())
+    else:
+        print_usage()
