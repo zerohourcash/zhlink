@@ -613,7 +613,6 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
 
     def test_examples_use_public_zhlink_facade(self) -> None:
         repo = Path(__file__).resolve().parents[1]
-        python_path = f"{repo}:{repo / 'zhc_rawtx'}"
         for script in [
             repo / "examples" / "create_wallet.py",
             repo / "examples" / "create_bip39_wallet.py",
@@ -624,13 +623,13 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 check=True,
                 text=True,
                 capture_output=True,
-                env={"PYTHONPATH": python_path, "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=repo,
+                env={"PYTHONDONTWRITEBYTECODE": "1"},
             )
             self.assertIn("{", completed.stdout)
 
-    def test_send_examples_are_guarded_without_run_real_send(self) -> None:
+    def test_send_examples_run_without_external_parameters(self) -> None:
         repo = Path(__file__).resolve().parents[1]
-        python_path = f"{repo}:{repo / 'zhc_rawtx'}"
         for script in [
             repo / "examples" / "send_zhc.py",
             repo / "examples" / "mass_send.py",
@@ -645,18 +644,24 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 check=True,
                 text=True,
                 capture_output=True,
-                env={"PYTHONPATH": python_path, "PYTHONDONTWRITEBYTECODE": "1"},
+                cwd=repo,
+                env={"PYTHONDONTWRITEBYTECODE": "1"},
             )
             self.assertTrue(
-                "Refusing to send" in completed.stdout
+                "Edit " in completed.stdout
                 or "Usage:" in completed.stdout,
                 completed.stdout,
             )
 
     def test_receiver_delete_command_is_safe_for_missing_address(self) -> None:
         repo = Path(__file__).resolve().parents[1]
-        python_path = f"{repo}:{repo / 'zhc_rawtx'}"
-        with tempfile.TemporaryDirectory() as tmp:
+        receiver_db = repo / ".zhlink-usdz-receiver.sqlite3"
+        backup = receiver_db.with_suffix(".sqlite3.test-backup")
+        if backup.exists():
+            backup.unlink()
+        if receiver_db.exists():
+            receiver_db.replace(backup)
+        try:
             completed = subprocess.run(
                 [
                     sys.executable,
@@ -667,12 +672,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 check=True,
                 text=True,
                 capture_output=True,
-                env={
-                    "PYTHONPATH": python_path,
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                    "ZHLINK_RECEIVER_DB": str(Path(tmp) / "receiver.sqlite3"),
-                },
+                cwd=repo,
+                env={"PYTHONDONTWRITEBYTECODE": "1"},
             )
+        finally:
+            if receiver_db.exists():
+                receiver_db.unlink()
+            if backup.exists():
+                backup.replace(receiver_db)
         self.assertIn("not found:", completed.stdout)
 
 

@@ -110,13 +110,6 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-For direct local use without installing:
-
-```bash
-cd /root/wallet/zhlink
-export PYTHONPATH=/root/wallet/zhlink
-```
-
 ## Create Address
 
 ```python
@@ -251,19 +244,23 @@ then RPC broadcast fallback.
 
 The example below creates a fresh USDZ receiving address, watches it through the
 shared WSS hub, and forwards the detected USDZ to the admin address with
-`send_usdz_gas_free()`. It is guarded by default so it cannot accidentally wait
-or send during smoke tests.
+`send_usdz_gas_free()`. Edit the constants at the top of the file before
+production use:
+
+```python
+FLAG_SEND_REAL_TX = True
+ADMIN_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
+ADMIN_GAS_WIF = "K..."
+MIN_USDZ = Decimal("0.00000001")
+```
 
 ```bash
-RUN_WATCH_EXAMPLE=1 \
-RUN_REAL_SEND=1 \
-ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
-ZHLINK_ADMIN_ADDRESS="ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi" \
 python examples/watch_deposit_and_forward_usdz.py
 ```
 
-Without `RUN_REAL_SEND=1`, the example builds the gas-free transaction but does
-not broadcast it.
+With `FLAG_SEND_REAL_TX=True`, the example broadcasts the real forwarding
+transaction. With `FLAG_SEND_REAL_TX=False`, it only builds/preflights and does
+not broadcast.
 
 For a long-running receiver, create a new deposit address only when your
 application receives a new deposit request:
@@ -272,20 +269,30 @@ application receives a new deposit request:
 python examples/usdz_receiver_service.py new
 ```
 
-The generated address is stored in `.zhlink-usdz-receiver.sqlite3`.  Then run
-the receiver service. It watches already-created active addresses through one
-shared WSS hub and forwards received USDZ to the admin address:
+The generated address is stored in `.zhlink-usdz-receiver.sqlite3` in the
+library root. Then run the receiver service. It watches already-created active
+addresses through one shared WSS hub and forwards received USDZ to the admin
+address:
 
 ```bash
-RUN_USDZ_RECEIVER=1 \
-RUN_REAL_SEND=1 \
-ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
 python examples/usdz_receiver_service.py serve
 ```
 
+`examples/usdz_receiver_service.py` is production-oriented by default:
+
+```python
+FLAG_SEND_REAL_TX = True
+```
+
+With this flag set to `True`, the service builds, preflights, and broadcasts the
+real gas-free USDZ forwarding transaction. Set it to `False` only when you need
+a local dry-run/preflight without broadcasting. All production variables are
+constants at the top of the example file.
+
 The service does not pre-generate addresses. It only watches addresses that were
 created by explicit `new` requests. Receiver state is stored in
-`.zhlink-usdz-receiver.sqlite3` by default.
+`.zhlink-usdz-receiver.sqlite3` in the same library root, so running the script
+from another working directory still uses the same receiver database.
 
 To delete a receiver address and its private key from the local SQLite state:
 
@@ -296,11 +303,14 @@ python examples/usdz_receiver_service.py delete Z...
 To delete receiver addresses automatically after a successful live forward:
 
 ```bash
-ZHLINK_DELETE_AFTER_FORWARD=1 \
-RUN_USDZ_RECEIVER=1 \
-RUN_REAL_SEND=1 \
-ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
 python examples/usdz_receiver_service.py serve
+```
+
+For automatic cleanup after successful forwarding, set this constant in the
+file:
+
+```python
+DELETE_AFTER_FORWARD = True
 ```
 
 When a transaction touching the receiver address appears before confirmation,
@@ -539,22 +549,32 @@ Run examples one by one:
 
 ```bash
 cd /root/wallet/zhlink
-PYTHONPATH=. python3 examples/create_wallet.py
-PYTHONPATH=. python3 examples/create_bip39_wallet.py
-PYTHONPATH=. ZHLINK_ADDRESS="Z..." python3 examples/check_balance.py
-PYTHONPATH=. python3 examples/send_to_contract.py
-PYTHONPATH=. python3 examples/mass_send.py
+python3 examples/create_wallet.py
+python3 examples/create_bip39_wallet.py
+python3 examples/check_balance.py
+python3 examples/send_to_contract.py
+python3 examples/mass_send.py
 ```
+
+Each example is a standalone file. Edit the constants at the top of the script,
+then run it without extra command-line or environment parameters. Send examples
+use:
+
+```python
+FLAG_SEND_REAL_TX = True
+```
+
+When the flag is `True`, the script performs the real transaction path. When the
+flag is `False`, it performs only the available dry-run/preflight/estimate path.
 
 Run all safe examples at once:
 
 ```bash
 cd /root/wallet/zhlink
-PYTHONPATH=. python3 examples/run_all_examples.py
+python3 examples/run_all_examples.py
 ```
 
-Send examples are guarded by `RUN_REAL_SEND=1` and will not broadcast by
-accident. Never commit real private keys.
+Never commit real private keys.
 
 ## Publishing
 

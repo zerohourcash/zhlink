@@ -1,18 +1,23 @@
 import asyncio
 import contextlib
-import os
 import time
 from decimal import Decimal
+from pathlib import Path
 
 from zhlink import ZHLinkConfig, async_send_usdz_gas_free, create_address
 from zhlink.rpc import ZHCashRPC
 
 
-ADMIN_ADDRESS = os.environ.get("ZHLINK_ADMIN_ADDRESS", "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi")
-ADMIN_GAS_WIF = os.environ.get("ZHLINK_ADMIN_GAS_WIF", "")
-MIN_USDZ = Decimal(os.environ.get("ZHLINK_MIN_USDZ", "0.00000001"))
-TIMEOUT_SECONDS = int(os.environ.get("ZHLINK_WAIT_SECONDS", "3600"))
-RUN_REAL_SEND = os.environ.get("RUN_REAL_SEND") == "1"
+# Production switch:
+#   True  - after deposit confirmation, broadcast the real gas-free USDZ forward.
+#   False - wait for deposit and build/preflight only, without broadcasting.
+FLAG_SEND_REAL_TX = True
+
+ADMIN_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
+ADMIN_GAS_WIF = "K..."
+MIN_USDZ = Decimal("0.00000001")
+TIMEOUT_SECONDS = 3600
+GASFREE_STORE_PATH = Path(".zhlink-gasfree-utxos.json")
 
 
 async def wait_for_usdz(address: str, config: ZHLinkConfig) -> Decimal:
@@ -43,12 +48,8 @@ async def wait_for_usdz(address: str, config: ZHLinkConfig) -> Decimal:
 
 
 async def main() -> None:
-    if os.environ.get("RUN_WATCH_EXAMPLE") != "1":
-        print("Refusing to send or wait for deposit. Set RUN_WATCH_EXAMPLE=1 intentionally.")
-        print(
-            "For live forwarding also set RUN_REAL_SEND=1, "
-            "ZHLINK_ADMIN_GAS_WIF, and optional ZHLINK_ADMIN_ADDRESS."
-        )
+    if ADMIN_GAS_WIF == "K...":
+        print("Edit ADMIN_GAS_WIF, ADMIN_ADDRESS and MIN_USDZ at the top of this file.")
         return
 
     wallet = create_address()
@@ -64,20 +65,14 @@ async def main() -> None:
     amount = await wait_for_usdz(wallet.address, config)
     print("deposit detected:", amount, "USDZ")
 
-    if not ADMIN_GAS_WIF:
-        raise SystemExit("Set ZHLINK_ADMIN_GAS_WIF to forward USDZ gas-free.")
-
-    if not RUN_REAL_SEND:
-        print("RUN_REAL_SEND is not 1, building transaction only.")
-
     result = await async_send_usdz_gas_free(
         sender_private_key_wif=wallet.priv_key,
         admin_private_key_wif=ADMIN_GAS_WIF,
         to_address=ADMIN_ADDRESS,
         amount=str(amount),
         config=config,
-        broadcast=RUN_REAL_SEND,
-        store_path=os.environ.get("ZHLINK_GASFREE_STORE", ".zhlink-gasfree-utxos.json"),
+        broadcast=FLAG_SEND_REAL_TX,
+        store_path=GASFREE_STORE_PATH,
     )
 
     print("forward result:")

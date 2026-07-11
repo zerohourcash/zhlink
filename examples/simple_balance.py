@@ -1,11 +1,10 @@
-import os
-
 from zhlink import get_balance
 
 
-address = os.environ.get("ZHLINK_ADDRESS", "")
-if not address:
-    raise SystemExit("Set ZHLINK_ADDRESS=Z...")
+ADDRESS = "Z..."
 
-print(get_balance(address))
+if ADDRESS == "Z...":
+    print("Edit ADDRESS at the top of this file.")
+    raise SystemExit(0)
 
+print(get_balance(ADDRESS))

@@ -1,20 +1,28 @@
-import os
+FLAG_SEND_REAL_TX = True
+PRIVATE_KEY_WIF = "L..."
+TO_ADDRESS = "Z..."
+AMOUNT_ZHC = "1"
 
 
 def main() -> None:
-    if os.environ.get("RUN_REAL_SEND") != "1":
-        print("Refusing to send. Set RUN_REAL_SEND=1 intentionally.")
-        return
-
     from zhlink import send_zhc
 
-    to_address = os.environ.get("ZHLINK_TO_ADDRESS", "")
-    private_key = os.environ.get("ZHLINK_FROM_WIF", "")
-    amount = os.environ.get("ZHLINK_AMOUNT", "0")
-    if not to_address or not private_key:
-        raise SystemExit("Set ZHLINK_TO_ADDRESS and ZHLINK_FROM_WIF")
+    if PRIVATE_KEY_WIF == "L..." or TO_ADDRESS == "Z...":
+        print("Edit PRIVATE_KEY_WIF, TO_ADDRESS and AMOUNT_ZHC at the top of this file.")
+        return
 
-    result = send_zhc(private_key, to_address, amount)
+    if not FLAG_SEND_REAL_TX:
+        print(
+            {
+                "dry_run": True,
+                "asset": "ZHC",
+                "to_address": TO_ADDRESS,
+                "amount": AMOUNT_ZHC,
+            }
+        )
+        return
+
+    result = send_zhc(PRIVATE_KEY_WIF, TO_ADDRESS, AMOUNT_ZHC)
     print(result)
     if result.get("status") != "ok":
         raise SystemExit(1)

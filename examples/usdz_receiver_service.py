@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sqlite3
 import sys
 import time
@@ -10,13 +9,21 @@ from pathlib import Path
 from zhlink import ZHLinkConfig, async_send_usdz_gas_free, create_address, watch_balance
 
 
-DB_PATH = Path(os.environ.get("ZHLINK_RECEIVER_DB", ".zhlink-usdz-receiver.sqlite3"))
-ADMIN_ADDRESS = os.environ.get("ZHLINK_ADMIN_ADDRESS", "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi")
-ADMIN_GAS_WIF = os.environ.get("ZHLINK_ADMIN_GAS_WIF", "")
-MIN_USDZ = Decimal(os.environ.get("ZHLINK_MIN_USDZ", "0.00000001"))
-RUN_SERVICE = os.environ.get("RUN_USDZ_RECEIVER") == "1"
-RUN_REAL_SEND = os.environ.get("RUN_REAL_SEND") == "1"
-DELETE_AFTER_FORWARD = os.environ.get("ZHLINK_DELETE_AFTER_FORWARD") == "1"
+# Production switch:
+#   True  - build, preflight, and broadcast real gas-free USDZ transactions.
+#   False - build and dry-run/preflight only, without broadcasting.
+FLAG_SEND_REAL_TX = True
+
+LIBRARY_ROOT = Path(__file__).resolve().parents[1]
+DB_PATH = LIBRARY_ROOT / ".zhlink-usdz-receiver.sqlite3"
+ADMIN_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
+ADMIN_GAS_WIF = "K..."
+MIN_USDZ = Decimal("0.00000001")
+DELETE_AFTER_FORWARD = False
+GASFREE_STORE_PATH = LIBRARY_ROOT / ".zhlink-gasfree-utxos.json"
+ADDRESS_SUBSCRIPTION_TTL_SECONDS = 12 * 60 * 60
+WS_MAX_FAILURES = 5
+WS_COOLDOWN_SECONDS = 120.0
 
 
 def connect() -> sqlite3.Connection:
@@ -113,8 +120,8 @@ async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig)
             to_address=ADMIN_ADDRESS,
             amount=str(usdz),
             config=config,
-            broadcast=RUN_REAL_SEND,
-            store_path=os.environ.get("ZHLINK_GASFREE_STORE", ".zhlink-gasfree-utxos.json"),
+            broadcast=FLAG_SEND_REAL_TX,
+            store_path=GASFREE_STORE_PATH,
         )
         txid = (
             result.get("txid")
@@ -124,12 +131,12 @@ async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig)
         )
         update_address(
             address,
-            status="forwarded" if RUN_REAL_SEND else "preview",
+            status="forwarded" if FLAG_SEND_REAL_TX else "preview",
             last_usdz=str(usdz),
             forward_txid=str(txid),
             error=None,
         )
-        if RUN_REAL_SEND and DELETE_AFTER_FORWARD:
+        if FLAG_SEND_REAL_TX and DELETE_AFTER_FORWARD:
             delete_receiver_address(address)
             print("receiver deleted after forward:", address)
         print("forward result:", address, result)
@@ -166,18 +173,14 @@ async def watch_receiver(row: sqlite3.Row, config: ZHLinkConfig) -> None:
 
 
 async def service_loop() -> None:
-    if not RUN_SERVICE:
-        print("Refusing to send or run receiver. Set RUN_USDZ_RECEIVER=1 intentionally.")
-        print("For live forwarding also set RUN_REAL_SEND=1 and ZHLINK_ADMIN_GAS_WIF.")
-        return
-    if not ADMIN_GAS_WIF:
-        raise SystemExit("Set ZHLINK_ADMIN_GAS_WIF.")
+    if ADMIN_GAS_WIF == "K...":
+        raise SystemExit("Edit ADMIN_GAS_WIF at the top of this file.")
 
     init_db()
     config = ZHLinkConfig.public_network(
-        address_subscription_ttl_seconds=float(os.environ.get("ZHLINK_RECEIVER_TTL", str(12 * 60 * 60))),
-        ws_max_failures=int(os.environ.get("ZHLINK_WS_MAX_FAILURES", "5")),
-        ws_cooldown_seconds=float(os.environ.get("ZHLINK_WS_COOLDOWN", "120")),
+        address_subscription_ttl_seconds=ADDRESS_SUBSCRIPTION_TTL_SECONDS,
+        ws_max_failures=WS_MAX_FAILURES,
+        ws_cooldown_seconds=WS_COOLDOWN_SECONDS,
     )
 
     tasks: dict[str, asyncio.Task] = {}
@@ -200,11 +203,13 @@ def print_usage() -> None:
     print("Usage:")
     print("  python examples/usdz_receiver_service.py new")
     print("  python examples/usdz_receiver_service.py delete Z...")
-    print("  RUN_USDZ_RECEIVER=1 ZHLINK_ADMIN_GAS_WIF=... python examples/usdz_receiver_service.py serve")
+    print("  python examples/usdz_receiver_service.py serve")
     print("")
+    print("Edit constants at the top of this file before production use.")
     print("'new' creates exactly one receiver address on explicit request.")
     print("'delete' removes a receiver address and its private key from the local SQLite state.")
     print("'serve' watches already-created active addresses and forwards deposits.")
+    print("Set FLAG_SEND_REAL_TX=False only for a local dry-run preview.")
 
 
 if __name__ == "__main__":

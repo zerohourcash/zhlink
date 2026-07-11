@@ -1,14 +1,14 @@
-import os
+ADDRESS = "Z..."
 
 
 def main() -> None:
-    address = os.environ.get("ZHLINK_ADDRESS", "")
-    if not address:
-        raise SystemExit("Set ZHLINK_ADDRESS=Z...")
+    if ADDRESS == "Z...":
+        print("Edit ADDRESS at the top of this file.")
+        return
 
     from zhlink import get_balance
 
-    print(get_balance(address))
+    print(get_balance(ADDRESS))
 
 
 if __name__ == "__main__":
