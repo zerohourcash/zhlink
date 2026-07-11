@@ -249,18 +249,22 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "Bip39Wallet",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
+                "call_contract",
                 "create_address",
                 "create_wallet",
                 "derive_bip39_zhc_wallet",
                 "generate_bip39_mnemonic",
                 "generate_bip39_zhc_wallet",
                 "get_balance",
+                "send_to_contract",
                 "send_usdz_gas_free",
                 "send_zhc",
                 "validate_bip39_mnemonic",
             ],
         )
         self.assertTrue(callable(zhlink.create_address))
+        self.assertTrue(callable(zhlink.call_contract))
+        self.assertTrue(callable(zhlink.send_to_contract))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -282,6 +286,32 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         import zhlink
 
         self.assertTrue(callable(zhlink.create_address))
+
+    def test_call_contract_public_api_normalizes_rpc_response(self) -> None:
+        import zhlink.api as api
+
+        original = api._rpc_call
+
+        def fake_rpc_call(config, method, params):
+            self.assertEqual(method, "callcontract")
+            self.assertEqual(params[0], DEFAULT_USDZ_CONTRACT)
+            self.assertEqual(params[1], "70a08231")
+            return {
+                "executionResult": {
+                    "output": "0" * 63 + "1",
+                    "gasUsed": 12345,
+                    "excepted": "None",
+                }
+            }
+
+        api._rpc_call = fake_rpc_call
+        try:
+            result = api.call_contract(DEFAULT_USDZ_CONTRACT, "0x70a08231")
+        finally:
+            api._rpc_call = original
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["gas_used"], 12345)
+        self.assertEqual(result["output"], "0" * 63 + "1")
 
     def test_examples_use_public_zhlink_facade(self) -> None:
         repo = Path(__file__).resolve().parents[1]
@@ -305,6 +335,7 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         python_path = f"{repo}:{repo / 'zhc_rawtx'}"
         for script in [
             repo / "examples" / "send_zhc.py",
+            repo / "examples" / "send_to_contract.py",
             repo / "examples" / "simple_send_zhc.py",
             repo / "examples" / "simple_send_usdz_gas_free.py",
         ]:

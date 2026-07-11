@@ -7,6 +7,8 @@ The public API is intentionally small:
 - create a new ZHC address;
 - check ZHC + USDZ balance;
 - send native ZHC from a private key;
+- dry-run/read ZHCASH smart contracts with `callcontract`;
+- send payable ZHCASH smart-contract calls from a private key;
 - send USDZ with admin-paid ZHC gas;
 - optionally read extra ZRC-20 token balances.
 
@@ -100,6 +102,45 @@ print(result)
 
 The sender address is derived from the private key automatically.
 
+## Smart Contracts
+
+Use `call_contract` before any contract transaction. It calls ZHCASH
+`callcontract` through configured public RPC endpoints and returns the raw
+execution result plus common fields.
+
+```python
+from zhlink import call_contract
+
+result = call_contract(
+    contract_address="a48d0ee7365ce1add8e595de4d54344239f8ca28",
+    data_hex="70a08231...",
+    from_address="Z...",  # optional
+    gas=1_000_000,
+)
+
+print(result["output"])
+```
+
+Use `send_to_contract` for a real payable contract call.
+
+```python
+from zhlink import send_to_contract
+
+result = send_to_contract(
+    private_key_wif="L...",
+    contract_address="...",
+    data_hex="...",
+    amount="0",        # ZHC sent to the contract, if needed
+    gas=1_000_000,
+)
+
+print(result)
+```
+
+The sender address is derived locally. The function runs `callcontract`
+preflight, selects UTXO, signs locally, checks mempool when RPC is available,
+broadcasts through ZeroScan and falls back to RPC broadcast.
+
 ## Send USDZ Gas-Free
 
 `send_usdz_gas_free` signs the USDZ transfer with the sender key and pays ZHC
@@ -172,6 +213,7 @@ cd /root/wallet/zhlink
 PYTHONPATH=. python3 examples/create_wallet.py
 PYTHONPATH=. python3 examples/create_bip39_wallet.py
 PYTHONPATH=. ZHLINK_ADDRESS="Z..." python3 examples/check_balance.py
+PYTHONPATH=. python3 examples/send_to_contract.py
 ```
 
 Run all safe examples at once:
@@ -192,8 +234,8 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this

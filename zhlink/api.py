@@ -319,6 +319,148 @@ def _preflight_usdz_transfer(config: ZHLinkConfig, sender: str, recipient: str, 
     return result
 
 
+def _normalize_hex(value: str, *, field: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized.startswith("0x"):
+        normalized = normalized[2:]
+    if not normalized:
+        normalized = ""
+    if any(ch not in "0123456789abcdef" for ch in normalized):
+        raise ValueError(f"{field} must be hex")
+    if len(normalized) % 2:
+        normalized = "0" + normalized
+    return normalized
+
+
+def _contract_execution(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    execution = result.get("executionResult") or {}
+    return execution if isinstance(execution, dict) else {}
+
+
+def _normalize_contract_call_result(result: Any) -> dict[str, Any]:
+    execution = _contract_execution(result)
+    return {
+        "status": "ok",
+        "output": execution.get("output") or "",
+        "gas_used": execution.get("gasUsed"),
+        "excepted": execution.get("excepted"),
+        "excepted_message": execution.get("exceptedMessage"),
+        "raw": result,
+    }
+
+
+def call_contract(
+    contract_address: str,
+    data_hex: str = "",
+    *,
+    from_address: str | None = None,
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+    allow_revert: bool = False,
+    require_bool_success: bool = False,
+) -> dict[str, Any]:
+    """Run ZHCASH ``callcontract`` through configured public RPC endpoints.
+
+    This is the recommended dry-run/read method before sending any contract
+    transaction. ``data_hex`` is ABI calldata without a required ``0x`` prefix.
+    """
+
+    cfg = config or ZHLinkConfig()
+    contract = _normalize_hex(contract_address, field="contract_address")
+    data = _normalize_hex(data_hex, field="data_hex")
+    caller = from_address or cfg.admin_address
+    result = _rpc_call(cfg, "callcontract", [contract, data, caller, int(gas)])
+    normalized = _normalize_contract_call_result(result)
+    excepted = normalized.get("excepted")
+    if excepted not in (None, "", "None", "none") and not allow_revert:
+        raise RuntimeError(
+            "contract call reverted: "
+            f"{normalized.get('excepted_message') or normalized.get('output') or excepted}"
+        )
+    output = str(normalized.get("output") or "").lower()
+    if require_bool_success and output and int(output[-64:] or "0", 16) == 0:
+        raise RuntimeError("contract call returned false")
+    return normalized
+
+
+async def _send_to_contract_async(
+    private_key_wif: str,
+    contract_address: str,
+    data_hex: str = "",
+    *,
+    amount: str | int | float | Decimal = "0",
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+    require_bool_success: bool = False,
+    service_fee: str | int | float | Decimal | None = None,
+    selection_buffer: str | int | float | Decimal | None = None,
+) -> dict[str, Any]:
+    from .rpc import ZHCashRPC
+
+    cfg = config or ZHLinkConfig()
+    from_address = _address_from_wif(private_key_wif)
+    contract = _normalize_hex(contract_address, field="contract_address")
+    data = _normalize_hex(data_hex, field="data_hex")
+    client = ZHCashRPC(cfg)
+    try:
+        result = await client.send_to_contract(
+            contract_address=contract,
+            from_address=from_address,
+            to_address=from_address,
+            amount=float(Decimal(str(amount))),
+            private_key=private_key_wif,
+            hex_command=data,
+            gas=int(gas),
+            require_bool_success=require_bool_success,
+            service_fee=Decimal(str(service_fee)) if service_fee is not None else None,
+            selection_buffer=Decimal(str(selection_buffer)) if selection_buffer is not None else None,
+        )
+        result.setdefault("from_address", from_address)
+        result.setdefault("contract_address", contract)
+        result.setdefault("amount", str(amount))
+        result.setdefault("data_hex", data)
+        result.setdefault("gas", int(gas))
+        return result
+    finally:
+        await client.close()
+
+
+def send_to_contract(
+    private_key_wif: str,
+    contract_address: str,
+    data_hex: str = "",
+    *,
+    amount: str | int | float | Decimal = "0",
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+    require_bool_success: bool = False,
+    service_fee: str | int | float | Decimal | None = None,
+    selection_buffer: str | int | float | Decimal | None = None,
+) -> dict[str, Any]:
+    """Send a payable ZHCASH contract call from a WIF private key.
+
+    The sender address is derived locally. The function runs ``callcontract``
+    preflight, selects UTXO, signs locally, checks mempool when RPC is
+    available, broadcasts through ZeroScan, and falls back to RPC broadcast.
+    """
+
+    return _run(
+        _send_to_contract_async(
+            private_key_wif,
+            contract_address,
+            data_hex,
+            amount=amount,
+            gas=gas,
+            config=config,
+            require_bool_success=require_bool_success,
+            service_fee=service_fee,
+            selection_buffer=selection_buffer,
+        )
+    )
+
+
 def _testmempoolaccept(config: ZHLinkConfig, rawtx: str) -> dict[str, Any]:
     try:
         result = _rpc_call(config, "testmempoolaccept", [[rawtx], False])
@@ -451,8 +593,10 @@ __all__ = [
     "Balance",
     "ZHLinkConfig",
     "admin_gas_wallet_info",
+    "call_contract",
     "create_address",
     "get_balance",
+    "send_to_contract",
     "send_zhc",
     "send_usdz_gas_free",
 ]
