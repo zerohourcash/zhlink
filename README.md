@@ -83,8 +83,8 @@ uv add git+https://github.com/zerohourcash/zhlink.git
 Install a fixed release tag:
 
 ```bash
-pip install "git+https://github.com/zerohourcash/zhlink.git@v0.1.5"
-uv pip install "git+https://github.com/zerohourcash/zhlink.git@v0.1.5"
+pip install "git+https://github.com/zerohourcash/zhlink.git@vX.Y.Z"
+uv pip install "git+https://github.com/zerohourcash/zhlink.git@vX.Y.Z"
 ```
 
 ### Verify Install
@@ -584,8 +584,8 @@ checks, and publishes the package to PyPI.
 Release flow:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 The workflow uses PyPI Trusted Publishing, so the PyPI project must allow this
