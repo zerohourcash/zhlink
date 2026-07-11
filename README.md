@@ -1,43 +1,19 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/badge/PyPI-0.1.25-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/badge/PyPI-0.1.26-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
-The public API is intentionally small:
+It is designed so a beginner can start with a few functions:
 
-- create a new ZHC address;
-- check ZHC + USDZ balance;
-- send native ZHC from a private key;
-- dry-run/read ZHCASH smart contracts with `callcontract`;
-- send payable ZHCASH smart-contract calls from a private key;
-- send ZHC, USDZ or any ZRC-20 token to many recipients from a JSON plan;
-- send USDZ with admin-paid ZHC gas;
-- optionally read extra ZRC-20 token balances.
-
-The library is async-first for long-running wallet apps: WSS is used as the
-primary realtime signal and automatically falls back to HTTP/RPC polling when
-WSS is unavailable. Synchronous wrappers are still provided for simple scripts.
-
-Main async/sync pairs:
-
-- `async_get_balance()` / `get_balance()`;
-- `async_force_refresh_balance()` / `force_refresh_balance()`;
-- `async_call_contract()` / `call_contract()`;
-- `async_send_zhc()` / `send_zhc()`;
-- `async_send_to_contract()` / `send_to_contract()`;
-- `async_send_usdz_gas_free()` / `send_usdz_gas_free()`;
-- `async_admin_gas_wallet_info()` / `admin_gas_wallet_info()`;
-- `async_estimate_mass_send()` / `estimate_mass_send()`;
-- `async_prepare_mass_send_utxos()` / `prepare_mass_send_utxos()`;
-- `async_wait_for_next_block()` / `wait_for_next_block()`;
-- `async_send_mass()` / `send_mass()`;
-- `async_create_and_forward_usdz_deposit()` / `create_and_forward_usdz_deposit()`;
-- `async_wait_for_usdz_deposit()` / `wait_for_usdz_deposit()`;
-- `async_forward_usdz_deposit()` / `forward_usdz_deposit()`.
+- `new_wallet()` - create a local ZHC wallet;
+- `balance(address)` - read ZHC and USDZ balance;
+- `send_zhc(private_key_wif, to_address, amount)` - send native ZHC;
+- `send_usdz_free(sender_key, admin_gas_key, to_address, amount)` - send USDZ with admin-paid ZHC gas;
+- `new_seed_config()` and `next_seed_wallet()` - derive many ZHC wallets from one BIP39 seed.
 
 The raw transaction engine is bundled inside the package. Normal users only
-import `zhlink`.
+import `zhlink`; private keys are never sent to ZeroScan or RPC.
 
 ## Install
 
@@ -105,9 +81,9 @@ uv add git+https://github.com/zerohourcash/zhlink.git
 python - <<'PY'
 import zhlink
 
-wallet = zhlink.create_address()
+wallet = zhlink.new_wallet()
 print(wallet.address)
-print(zhlink.get_mass_send_template("usdz")["asset"])
+print(wallet.private_key_wif)
 PY
 ```
 
@@ -122,21 +98,80 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-## Create Address
+## Quick Start
+
+### Create a Wallet
 
 ```python
-from zhlink import create_address
+import zhlink
 
-wallet = create_address()
+wallet = zhlink.new_wallet()
 
 print(wallet.address)
-print(wallet.priv_key)
+print(wallet.private_key_wif)
 ```
 
-Private keys are generated locally. The library never sends private keys to
-ZeroScan or RPC.
+`private_key_wif` is the private key. Keep it secret.
 
-## BIP39 ZHCASH Addresses
+### Check Balance
+
+```python
+import zhlink
+
+data = zhlink.balance("Z...")
+
+print(data["zhc"])
+print(data["usdz"])
+```
+
+### Send ZHC
+
+```python
+import zhlink
+
+result = zhlink.send_zhc(
+    private_key_wif="L...",
+    to_address="Z...",
+    amount="1.25",
+)
+
+print(result)
+```
+
+Use `send_zhc()` when you know you are sending native ZHC.
+
+There is also a generic dispatcher for dynamic asset names:
+
+```python
+import zhlink
+
+result = zhlink.send(
+    asset="ZHC",
+    private_key_wif="L...",
+    to_address="Z...",
+    amount="1.25",
+)
+```
+
+`send()` requires the `asset` keyword on purpose. It does not replace
+`send_zhc()`.
+
+### Send USDZ With Admin-Paid Gas
+
+```python
+import zhlink
+
+result = zhlink.send_usdz_free(
+    sender_private_key_wif="L...",
+    admin_private_key_wif="K...",
+    to_address="Z...",
+    amount="0.1",
+)
+
+print(result)
+```
+
+### Use One Seed for Many ZHC Wallets
 
 ZHCASH addresses are derived like a Bitcoin-like UTXO chain: BIP39 seed,
 BIP32 secp256k1 private key, compressed WIF, then native ZHC P2PKH address.
@@ -146,41 +181,73 @@ The default path is compatible with the PWA wallet:
 m/44'/0'/0'/0/{index}
 ```
 
-Use one seed config when you need many recoverable ZHC receiving addresses. If
-the local database is lost, every address can be restored from the seed phrase
-and its index.
-
 ```python
 from pathlib import Path
+import zhlink
 
-from zhlink import (
-    create_next_zhc_wallet_from_config,
-    derive_zhc_wallet_from_config,
-    generate_bip39_zhc_seed_config,
-)
+seed_file = Path(".zhlink-zhc-seed.json")
 
-CONFIG_PATH = Path(".zhlink-zhc-seed.json")
+if not seed_file.exists():
+    seed = zhlink.new_seed_config(config_path=seed_file)
+    print("Save this seed phrase securely:", seed.mnemonic)
 
-if not CONFIG_PATH.exists():
-    config = generate_bip39_zhc_seed_config(
-        word_count=12,
-        config_path=CONFIG_PATH,
-    )
-    print("Save this seed phrase securely:", config.mnemonic)
-
-wallet = create_next_zhc_wallet_from_config(CONFIG_PATH)
+wallet = zhlink.next_seed_wallet(seed_file)
 print(wallet.address)
 print(wallet.private_key_wif)
 print(wallet.derivation_path)
 
-restored = derive_zhc_wallet_from_config(index=0, config_path=CONFIG_PATH)
+restored = zhlink.restore_seed_wallet(index=0, config_path=seed_file)
 print(restored.address)
 ```
 
-The config file contains the BIP39 seed phrase and is written with restricted
-file permissions where supported. Keep it private.
+If the local database is lost, every generated address can be restored from the
+seed phrase and its index. The seed config file contains the BIP39 seed phrase;
+keep it private.
 
-## Get Balance
+## Async Quick Start
+
+Every beginner function that can be useful in an async app has an async pair:
+
+```python
+import asyncio
+import zhlink
+
+async def main():
+    wallet = await zhlink.async_new_wallet()
+    data = await zhlink.async_balance(wallet.address)
+    print(wallet.address, data["zhc"], data["usdz"])
+
+asyncio.run(main())
+```
+
+Common sync/async pairs:
+
+- `new_wallet()` / `async_new_wallet()`;
+- `balance()` / `async_balance()`;
+- `send()` / `async_send()`;
+- `send_zhc()` / `async_send_zhc()`;
+- `send_usdz_free()` / `async_send_usdz_free()`;
+- `new_seed_config()` / `async_new_seed_config()`;
+- `next_seed_wallet()` / `async_next_seed_wallet()`;
+- `restore_seed_wallet()` / `async_restore_seed_wallet()`.
+
+## Advanced
+
+The detailed API remains available for wallet apps, service daemons, mass
+sends, custom RPC, direct smart-contract calls and USDZ receiver workflows.
+
+### Create Address
+
+```python
+from zhlink import create_address
+
+wallet = create_address()
+
+print(wallet.address)
+print(wallet.private_key_wif)
+```
+
+### Get Balance
 
 By default `get_balance` returns ZHC and USDZ.
 
@@ -704,7 +771,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.25`
+Current package version: `0.1.26`
 
 Release flow:
 

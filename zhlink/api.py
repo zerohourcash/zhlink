@@ -122,6 +122,21 @@ def create_address() -> WalletKey:
     return create_wallet()
 
 
+def new_wallet() -> WalletKey:
+    """Create one local ZHCASH wallet.
+
+    Beginner-friendly alias for ``create_address()``.
+    """
+
+    return create_address()
+
+
+async def async_new_wallet() -> WalletKey:
+    """Async alias for ``new_wallet()``."""
+
+    return create_address()
+
+
 async def _get_balance_async(
     address: str,
     *,
@@ -232,6 +247,43 @@ async def async_get_balance(
             token_decimals=token_decimals,
         )
     ).as_dict()
+
+
+def balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Return ZHC + USDZ balance.
+
+    Beginner-friendly alias for ``get_balance()``.
+    """
+
+    return get_balance(
+        address,
+        config=config,
+        tokens=tokens,
+        token_decimals=token_decimals,
+    )
+
+
+async def async_balance(
+    address: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    tokens: Mapping[str, str] | None = None,
+    token_decimals: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Async alias for ``balance()``."""
+
+    return await async_get_balance(
+        address,
+        config=config,
+        tokens=tokens,
+        token_decimals=token_decimals,
+    )
 
 
 def force_refresh_balance(
@@ -400,6 +452,72 @@ async def async_send_zhc(
     """Async version of ``send_zhc``."""
 
     return await _send_zhc_async(private_key_wif, to_address, amount, config=config)
+
+
+def send(
+    *,
+    asset: str,
+    private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    config: ZHLinkConfig | None = None,
+    admin_private_key_wif: str | None = None,
+    broadcast: bool = True,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+) -> dict[str, Any]:
+    """Generic send dispatcher.
+
+    Use ``send_zhc()`` for explicit native ZHC sends. Use this helper when your
+    application receives an asset name dynamically.
+    """
+
+    normalized_asset = asset.strip().upper()
+    if normalized_asset == "ZHC":
+        return send_zhc(private_key_wif, to_address, amount, config=config)
+    if normalized_asset == "USDZ":
+        if not admin_private_key_wif:
+            raise ValueError("admin_private_key_wif is required for USDZ gas-free sends")
+        return send_usdz_gas_free(
+            sender_private_key_wif=private_key_wif,
+            admin_private_key_wif=admin_private_key_wif,
+            to_address=to_address,
+            amount=amount,
+            config=config,
+            broadcast=broadcast,
+            store_path=store_path,
+        )
+    raise ValueError("unsupported asset. Use asset='ZHC' or asset='USDZ'")
+
+
+async def async_send(
+    *,
+    asset: str,
+    private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    config: ZHLinkConfig | None = None,
+    admin_private_key_wif: str | None = None,
+    broadcast: bool = True,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+) -> dict[str, Any]:
+    """Async generic send dispatcher."""
+
+    normalized_asset = asset.strip().upper()
+    if normalized_asset == "ZHC":
+        return await async_send_zhc(private_key_wif, to_address, amount, config=config)
+    if normalized_asset == "USDZ":
+        if not admin_private_key_wif:
+            raise ValueError("admin_private_key_wif is required for USDZ gas-free sends")
+        return await async_send_usdz_gas_free(
+            sender_private_key_wif=private_key_wif,
+            admin_private_key_wif=admin_private_key_wif,
+            to_address=to_address,
+            amount=amount,
+            config=config,
+            broadcast=broadcast,
+            store_path=store_path,
+        )
+    raise ValueError("unsupported asset. Use asset='ZHC' or asset='USDZ'")
 
 
 def _http_json(method: str, url: str, payload: dict[str, Any] | None = None, timeout: float = 20.0) -> Any:
@@ -918,24 +1036,85 @@ async def async_send_usdz_gas_free(
     )
 
 
+def send_usdz_free(
+    sender_private_key_wif: str,
+    admin_private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    config: ZHLinkConfig | None = None,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+    broadcast: bool = True,
+    max_attempts: int = 5,
+) -> dict[str, Any]:
+    """Send USDZ while the admin wallet pays ZHC gas.
+
+    Short beginner-friendly alias for ``send_usdz_gas_free()``.
+    """
+
+    return send_usdz_gas_free(
+        sender_private_key_wif,
+        admin_private_key_wif,
+        to_address,
+        amount,
+        config=config,
+        store_path=store_path,
+        broadcast=broadcast,
+        max_attempts=max_attempts,
+    )
+
+
+async def async_send_usdz_free(
+    sender_private_key_wif: str,
+    admin_private_key_wif: str,
+    to_address: str,
+    amount: str | int | float | Decimal,
+    *,
+    config: ZHLinkConfig | None = None,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+    broadcast: bool = True,
+    max_attempts: int = 5,
+) -> dict[str, Any]:
+    """Async alias for ``send_usdz_free()``."""
+
+    return await async_send_usdz_gas_free(
+        sender_private_key_wif,
+        admin_private_key_wif,
+        to_address,
+        amount,
+        config=config,
+        store_path=store_path,
+        broadcast=broadcast,
+        max_attempts=max_attempts,
+    )
+
+
 __all__ = [
     "Balance",
     "ZHLinkConfig",
     "admin_gas_wallet_info",
     "async_admin_gas_wallet_info",
+    "async_balance",
     "async_call_contract",
     "async_force_refresh_balance",
     "async_get_balance",
+    "async_new_wallet",
+    "async_send",
     "async_send_to_contract",
     "async_send_usdz_gas_free",
+    "async_send_usdz_free",
     "async_send_zhc",
+    "balance",
     "call_contract",
     "create_address",
     "force_refresh_balance",
     "get_cached_balance",
     "get_balance",
+    "new_wallet",
+    "send",
     "send_to_contract",
     "send_zhc",
     "send_usdz_gas_free",
+    "send_usdz_free",
     "watch_balance",
 ]

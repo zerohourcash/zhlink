@@ -472,19 +472,27 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "ZhcSeedConfig",
                 "admin_gas_wallet_info",
                 "async_admin_gas_wallet_info",
+                "async_balance",
                 "async_call_contract",
                 "async_create_and_forward_usdz_deposit",
                 "async_estimate_mass_send",
                 "async_force_refresh_balance",
                 "async_forward_usdz_deposit",
                 "async_get_balance",
+                "async_new_seed_config",
+                "async_new_wallet",
+                "async_next_seed_wallet",
                 "async_prepare_mass_send_utxos",
+                "async_restore_seed_wallet",
+                "async_send",
                 "async_send_mass",
                 "async_send_to_contract",
+                "async_send_usdz_free",
                 "async_send_usdz_gas_free",
                 "async_send_zhc",
                 "async_wait_for_next_block",
                 "async_wait_for_usdz_deposit",
+                "balance",
                 "call_contract",
                 "create_address",
                 "create_and_forward_usdz_deposit",
@@ -506,11 +514,17 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "get_mass_send_template",
                 "load_mass_send_plan",
                 "load_zhc_seed_config",
+                "new_seed_config",
+                "new_wallet",
+                "next_seed_wallet",
                 "prepare_mass_send_utxos",
+                "restore_seed_wallet",
                 "run_usdz_receiver",
                 "save_zhc_seed_config",
+                "send",
                 "send_mass",
                 "send_to_contract",
+                "send_usdz_free",
                 "send_usdz_gas_free",
                 "send_zhc",
                 "usdz_receiver_status",
@@ -522,6 +536,11 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             ],
         )
         self.assertTrue(callable(zhlink.create_address))
+        self.assertTrue(callable(zhlink.new_wallet))
+        self.assertTrue(callable(zhlink.async_new_wallet))
+        self.assertTrue(callable(zhlink.balance))
+        self.assertTrue(callable(zhlink.async_balance))
+        self.assertTrue(callable(zhlink.send))
         self.assertTrue(callable(zhlink.call_contract))
         self.assertTrue(callable(zhlink.async_call_contract))
         self.assertTrue(callable(zhlink.admin_gas_wallet_info))
@@ -545,6 +564,14 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertTrue(callable(zhlink.delete_usdz_receiver_address))
         self.assertTrue(callable(zhlink.wait_for_usdz_deposit))
         self.assertTrue(callable(zhlink.forward_usdz_deposit))
+        self.assertTrue(callable(zhlink.new_seed_config))
+        self.assertTrue(callable(zhlink.async_new_seed_config))
+        self.assertTrue(callable(zhlink.next_seed_wallet))
+        self.assertTrue(callable(zhlink.async_next_seed_wallet))
+        self.assertTrue(callable(zhlink.restore_seed_wallet))
+        self.assertTrue(callable(zhlink.async_restore_seed_wallet))
+        self.assertTrue(callable(zhlink.send_usdz_free))
+        self.assertTrue(callable(zhlink.async_send_usdz_free))
         self.assertFalse(hasattr(zhlink, "send_usdz_gas_freee"))
         self.assertFalse(hasattr(zhlink, "GasFreeStore"))
         self.assertFalse(hasattr(zhlink, "TEST_GASFREE_ADMIN_PRIVATE_KEY"))
@@ -555,6 +582,32 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         wallet = zhlink.create_address()
         self.assertTrue(wallet.address.startswith("Z"))
         self.assertTrue(wallet.priv_key.startswith(("K", "L")))
+        beginner_wallet = zhlink.new_wallet()
+        self.assertTrue(beginner_wallet.address.startswith("Z"))
+        self.assertEqual(beginner_wallet.private_key_wif, beginner_wallet.priv_key)
+
+    def test_beginner_seed_aliases_restore_indexed_wallets(self) -> None:
+        import zhlink
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "seed.json"
+            config = zhlink.new_seed_config(config_path=path)
+            self.assertTrue(zhlink.validate_bip39_mnemonic(config.mnemonic))
+            wallet = zhlink.next_seed_wallet(path)
+            restored = zhlink.restore_seed_wallet(index=0, config_path=path)
+            self.assertEqual(wallet.address, restored.address)
+            self.assertEqual(wallet.private_key_wif, restored.private_key_wif)
+
+    def test_generic_send_is_explicit_and_does_not_replace_send_zhc(self) -> None:
+        import zhlink
+
+        self.assertIsNot(zhlink.send, zhlink.send_zhc)
+        with self.assertRaises(TypeError):
+            zhlink.send("L...", "Z...", "1")  # type: ignore[misc]
+        with self.assertRaises(ValueError):
+            zhlink.send(asset="DOGE", private_key_wif="L...", to_address="Z...", amount="1")
+        with self.assertRaises(ValueError):
+            zhlink.send(asset="USDZ", private_key_wif="L...", to_address="Z...", amount="1")
 
     def test_config_defaults_are_exported(self) -> None:
         cfg = ZHLinkConfig.public_network()

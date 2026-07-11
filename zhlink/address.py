@@ -23,6 +23,12 @@ class WalletKey:
     priv_key: str
     public_key_hex: str
 
+    @property
+    def private_key_wif(self) -> str:
+        """Alias used by the beginner-friendly public API."""
+
+        return self.priv_key
+
 
 def _wif_from_private_number(number: int, compressed: bool = True) -> str:
     if number <= 0 or number >= SECP256K1_ORDER:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import asyncio
 import json
 import os
 import re
@@ -366,6 +367,85 @@ def create_next_zhc_wallet_from_config(
             path,
         )
     return wallet
+
+
+def new_seed_config(
+    word_count: int = 12,
+    *,
+    passphrase: str = "",
+    derivation_base: str = ZHC_DEFAULT_DERIVATION_BASE,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    overwrite: bool = False,
+) -> ZhcSeedConfig:
+    """Create and save a new BIP39 seed config for indexed ZHC wallets."""
+
+    return generate_bip39_zhc_seed_config(
+        word_count,
+        passphrase=passphrase,
+        derivation_base=derivation_base,
+        config_path=config_path,
+        overwrite=overwrite,
+    )
+
+
+async def async_new_seed_config(
+    word_count: int = 12,
+    *,
+    passphrase: str = "",
+    derivation_base: str = ZHC_DEFAULT_DERIVATION_BASE,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    overwrite: bool = False,
+) -> ZhcSeedConfig:
+    """Async alias for ``new_seed_config()``."""
+
+    return await asyncio.to_thread(
+        new_seed_config,
+        word_count,
+        passphrase=passphrase,
+        derivation_base=derivation_base,
+        config_path=config_path,
+        overwrite=overwrite,
+    )
+
+
+def next_seed_wallet(
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    *,
+    increment: bool = True,
+) -> Bip39Wallet:
+    """Create the next indexed ZHC wallet from a saved seed config."""
+
+    return create_next_zhc_wallet_from_config(config_path, increment=increment)
+
+
+async def async_next_seed_wallet(
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    *,
+    increment: bool = True,
+) -> Bip39Wallet:
+    """Async alias for ``next_seed_wallet()``."""
+
+    return await asyncio.to_thread(next_seed_wallet, config_path, increment=increment)
+
+
+def restore_seed_wallet(
+    *,
+    index: int,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+) -> Bip39Wallet:
+    """Restore one indexed ZHC wallet from a saved seed config."""
+
+    return derive_zhc_wallet_from_config(index=index, config_path=config_path)
+
+
+async def async_restore_seed_wallet(
+    *,
+    index: int,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+) -> Bip39Wallet:
+    """Async alias for ``restore_seed_wallet()``."""
+
+    return await asyncio.to_thread(restore_seed_wallet, index=index, config_path=config_path)
 
 
 def generate_bip39_zhc_wallet(
