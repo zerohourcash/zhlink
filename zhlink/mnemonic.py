@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -19,7 +21,9 @@ from zhc_rawtx.core import (  # type: ignore
 )
 
 
-ZHC_DEFAULT_DERIVATION_PATH = "m/44'/0'/0'/0/0"
+ZHC_DEFAULT_DERIVATION_BASE = "m/44'/0'/0'/0"
+ZHC_DEFAULT_DERIVATION_PATH = f"{ZHC_DEFAULT_DERIVATION_BASE}/0"
+DEFAULT_ZHC_SEED_CONFIG_PATH = Path(".zhlink-zhc-seed.json")
 VALID_BIP39_WORD_COUNTS = (12, 24)
 
 
@@ -30,6 +34,17 @@ class Bip39Wallet:
     private_key_wif: str
     address: str
     derivation_path: str = ZHC_DEFAULT_DERIVATION_PATH
+
+
+@dataclass(frozen=True)
+class ZhcSeedConfig:
+    mnemonic: str
+    derivation_base: str = ZHC_DEFAULT_DERIVATION_BASE
+    next_index: int = 0
+    passphrase: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 _WORDLIST_CACHE: list[str] | None = None
@@ -216,6 +231,141 @@ def derive_bip39_zhc_wallet(
         address=address_from_pubkey(pubkey, ZHC),
         derivation_path=derivation_path,
     )
+
+
+def derive_bip39_zhc_wallet_at_index(
+    mnemonic: str,
+    *,
+    index: int = 0,
+    passphrase: str = "",
+    derivation_base: str = ZHC_DEFAULT_DERIVATION_BASE,
+) -> Bip39Wallet:
+    """Derive a deterministic native ZHCASH wallet by BIP39 index."""
+
+    if index < 0:
+        raise ValueError("index must be greater than or equal to zero")
+    return derive_bip39_zhc_wallet(
+        mnemonic,
+        passphrase=passphrase,
+        derivation_path=f"{derivation_base.rstrip('/')}/{int(index)}",
+    )
+
+
+def _normalize_zhc_seed_config(config: ZhcSeedConfig | dict[str, Any]) -> ZhcSeedConfig:
+    if isinstance(config, ZhcSeedConfig):
+        normalized = config
+    else:
+        normalized = ZhcSeedConfig(
+            mnemonic=str(config.get("mnemonic", "")),
+            derivation_base=str(config.get("derivation_base", ZHC_DEFAULT_DERIVATION_BASE)),
+            next_index=int(config.get("next_index", 0)),
+            passphrase=str(config.get("passphrase", "")),
+        )
+    mnemonic = normalize_mnemonic(normalized.mnemonic)
+    if not validate_bip39_mnemonic(mnemonic):
+        raise ValueError("invalid BIP39 mnemonic")
+    if normalized.next_index < 0:
+        raise ValueError("next_index must be greater than or equal to zero")
+    return ZhcSeedConfig(
+        mnemonic=mnemonic,
+        derivation_base=normalized.derivation_base.rstrip("/"),
+        next_index=int(normalized.next_index),
+        passphrase=normalized.passphrase,
+    )
+
+
+def save_zhc_seed_config(
+    config: ZhcSeedConfig | dict[str, Any],
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+) -> ZhcSeedConfig:
+    """Save a deterministic ZHCASH BIP39 seed config as local JSON.
+
+    The config contains the seed phrase, so keep this file private. File mode is
+    restricted to the current user on POSIX systems.
+    """
+
+    normalized = _normalize_zhc_seed_config(config)
+    path = Path(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(normalized.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return normalized
+
+
+def load_zhc_seed_config(
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+) -> ZhcSeedConfig:
+    path = Path(config_path)
+    return _normalize_zhc_seed_config(json.loads(path.read_text(encoding="utf-8")))
+
+
+def generate_bip39_zhc_seed_config(
+    word_count: int = 12,
+    *,
+    passphrase: str = "",
+    derivation_base: str = ZHC_DEFAULT_DERIVATION_BASE,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    overwrite: bool = False,
+) -> ZhcSeedConfig:
+    """Generate and save a BIP39 seed config for indexed ZHCASH addresses."""
+
+    path = Path(config_path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"seed config already exists: {path}")
+    config = ZhcSeedConfig(
+        mnemonic=generate_bip39_mnemonic(word_count),
+        derivation_base=derivation_base.rstrip("/"),
+        next_index=0,
+        passphrase=passphrase,
+    )
+    return save_zhc_seed_config(config, path)
+
+
+def derive_zhc_wallet_from_config(
+    *,
+    index: int,
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+) -> Bip39Wallet:
+    """Restore one deterministic ZHCASH wallet from config and index."""
+
+    config = load_zhc_seed_config(config_path)
+    return derive_bip39_zhc_wallet_at_index(
+        config.mnemonic,
+        index=index,
+        passphrase=config.passphrase,
+        derivation_base=config.derivation_base,
+    )
+
+
+def create_next_zhc_wallet_from_config(
+    config_path: str | Path = DEFAULT_ZHC_SEED_CONFIG_PATH,
+    *,
+    increment: bool = True,
+) -> Bip39Wallet:
+    """Create the next indexed ZHCASH address from a saved BIP39 seed config."""
+
+    path = Path(config_path)
+    config = load_zhc_seed_config(path)
+    wallet = derive_bip39_zhc_wallet_at_index(
+        config.mnemonic,
+        index=config.next_index,
+        passphrase=config.passphrase,
+        derivation_base=config.derivation_base,
+    )
+    if increment:
+        save_zhc_seed_config(
+            ZhcSeedConfig(
+                mnemonic=config.mnemonic,
+                derivation_base=config.derivation_base,
+                next_index=config.next_index + 1,
+                passphrase=config.passphrase,
+            ),
+            path,
+        )
+    return wallet
 
 
 def generate_bip39_zhc_wallet(

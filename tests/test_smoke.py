@@ -22,10 +22,16 @@ from zhlink.config import (
 from zhlink.api import Balance
 from zhlink.cache import SQLiteBalanceCache
 from zhlink.mnemonic import (
+    ZHC_DEFAULT_DERIVATION_BASE,
     ZHC_DEFAULT_DERIVATION_PATH,
+    create_next_zhc_wallet_from_config,
     derive_bip39_zhc_wallet,
+    derive_bip39_zhc_wallet_at_index,
+    derive_zhc_wallet_from_config,
     generate_bip39_mnemonic,
+    generate_bip39_zhc_seed_config,
     generate_bip39_zhc_wallet,
+    load_zhc_seed_config,
     mnemonic_to_seed,
     normalize_mnemonic,
     validate_bip39_mnemonic,
@@ -86,6 +92,36 @@ class ZhlinkLibBip39Tests(unittest.TestCase):
         restored = derive_bip39_zhc_wallet(wallet.mnemonic)
         self.assertEqual(wallet.address, restored.address)
         self.assertEqual(wallet.private_key_wif, restored.private_key_wif)
+
+    def test_bip39_zhc_indexed_wallets_match_bitcoin_like_wif_addresses(self) -> None:
+        mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        addresses = set()
+        helper = BitcoinAddress()
+        for index in range(100):
+            wallet = derive_bip39_zhc_wallet_at_index(mnemonic, index=index)
+            self.assertTrue(wallet.address.startswith("Z"))
+            self.assertEqual(wallet.derivation_path, f"{ZHC_DEFAULT_DERIVATION_BASE}/{index}")
+            self.assertEqual(helper.address_from_wif(wallet.private_key_wif), wallet.address)
+            addresses.add(wallet.address)
+        self.assertEqual(len(addresses), 100)
+
+    def test_zhc_seed_config_creates_next_address_and_restores_by_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "seed.json"
+            config = generate_bip39_zhc_seed_config(word_count=12, config_path=path)
+            self.assertTrue(validate_bip39_mnemonic(config.mnemonic))
+
+            first = create_next_zhc_wallet_from_config(path)
+            second = create_next_zhc_wallet_from_config(path)
+            restored = derive_zhc_wallet_from_config(index=0, config_path=path)
+            loaded = load_zhc_seed_config(path)
+
+            self.assertEqual(first.address, restored.address)
+            self.assertEqual(first.private_key_wif, restored.private_key_wif)
+            self.assertNotEqual(first.address, second.address)
+            self.assertEqual(first.derivation_path, f"{ZHC_DEFAULT_DERIVATION_BASE}/0")
+            self.assertEqual(second.derivation_path, f"{ZHC_DEFAULT_DERIVATION_BASE}/1")
+            self.assertEqual(loaded.next_index, 2)
 
 
 class ZhlinkLibAddressAndSignerTests(unittest.TestCase):
@@ -424,12 +460,16 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
             [
                 "Balance",
                 "Bip39Wallet",
+                "DEFAULT_ZHC_SEED_CONFIG_PATH",
                 "MASS_SEND_TEMPLATE_NAMES",
                 "MassRecipient",
                 "MassSendPlan",
                 "UsdzReceiverConfig",
                 "WaitNextBlockError",
+                "ZHC_DEFAULT_DERIVATION_BASE",
+                "ZHC_DEFAULT_DERIVATION_PATH",
                 "ZHLinkConfig",
+                "ZhcSeedConfig",
                 "admin_gas_wallet_info",
                 "async_admin_gas_wallet_info",
                 "async_call_contract",
@@ -448,21 +488,27 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "call_contract",
                 "create_address",
                 "create_and_forward_usdz_deposit",
+                "create_next_zhc_wallet_from_config",
                 "create_usdz_receiver_address",
                 "create_wallet",
                 "delete_usdz_receiver_address",
                 "derive_bip39_zhc_wallet",
+                "derive_bip39_zhc_wallet_at_index",
+                "derive_zhc_wallet_from_config",
                 "estimate_mass_send",
                 "force_refresh_balance",
                 "forward_usdz_deposit",
                 "generate_bip39_mnemonic",
+                "generate_bip39_zhc_seed_config",
                 "generate_bip39_zhc_wallet",
                 "get_balance",
                 "get_cached_balance",
                 "get_mass_send_template",
                 "load_mass_send_plan",
+                "load_zhc_seed_config",
                 "prepare_mass_send_utxos",
                 "run_usdz_receiver",
+                "save_zhc_seed_config",
                 "send_mass",
                 "send_to_contract",
                 "send_usdz_gas_free",

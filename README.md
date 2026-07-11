@@ -1,6 +1,6 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/badge/PyPI-0.1.24-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/badge/PyPI-0.1.25-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
@@ -135,6 +135,50 @@ print(wallet.priv_key)
 
 Private keys are generated locally. The library never sends private keys to
 ZeroScan or RPC.
+
+## BIP39 ZHCASH Addresses
+
+ZHCASH addresses are derived like a Bitcoin-like UTXO chain: BIP39 seed,
+BIP32 secp256k1 private key, compressed WIF, then native ZHC P2PKH address.
+The default path is compatible with the PWA wallet:
+
+```text
+m/44'/0'/0'/0/{index}
+```
+
+Use one seed config when you need many recoverable ZHC receiving addresses. If
+the local database is lost, every address can be restored from the seed phrase
+and its index.
+
+```python
+from pathlib import Path
+
+from zhlink import (
+    create_next_zhc_wallet_from_config,
+    derive_zhc_wallet_from_config,
+    generate_bip39_zhc_seed_config,
+)
+
+CONFIG_PATH = Path(".zhlink-zhc-seed.json")
+
+if not CONFIG_PATH.exists():
+    config = generate_bip39_zhc_seed_config(
+        word_count=12,
+        config_path=CONFIG_PATH,
+    )
+    print("Save this seed phrase securely:", config.mnemonic)
+
+wallet = create_next_zhc_wallet_from_config(CONFIG_PATH)
+print(wallet.address)
+print(wallet.private_key_wif)
+print(wallet.derivation_path)
+
+restored = derive_zhc_wallet_from_config(index=0, config_path=CONFIG_PATH)
+print(restored.address)
+```
+
+The config file contains the BIP39 seed phrase and is written with restricted
+file permissions where supported. Keep it private.
 
 ## Get Balance
 
@@ -629,6 +673,7 @@ Run examples one by one:
 cd /root/wallet/zhlink
 python3 examples/create_wallet.py
 python3 examples/create_bip39_wallet.py
+python3 examples/zhc_seed_addresses.py
 python3 examples/check_balance.py
 python3 examples/send_to_contract.py
 python3 examples/mass_send.py
@@ -659,7 +704,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.24`
+Current package version: `0.1.25`
 
 Release flow:
 
