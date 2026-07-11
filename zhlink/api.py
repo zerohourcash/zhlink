@@ -303,7 +303,17 @@ async def watch_balance(
                 token_decimals=token_decimals,
                 force_refresh=True,
             )
-            await queue.put(balance.as_dict())
+            payload = balance.as_dict()
+            if isinstance(_snapshot, Mapping):
+                event = _snapshot.get("event")
+                if event:
+                    payload["realtime_event"] = event
+                payload["realtime_source"] = _snapshot.get("source") or (
+                    event.get("payload", {}).get("source")
+                    if isinstance(event, Mapping)
+                    else None
+                )
+            await queue.put(payload)
         except Exception as exc:
             await queue.put({"address": address, "status": "error", "reason": str(exc)})
 

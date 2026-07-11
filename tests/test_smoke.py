@@ -653,6 +653,28 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 completed.stdout,
             )
 
+    def test_receiver_delete_command_is_safe_for_missing_address(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        python_path = f"{repo}:{repo / 'zhc_rawtx'}"
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(repo / "examples" / "usdz_receiver_service.py"),
+                    "delete",
+                    "ZMissingAddressForSmokeTest",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+                env={
+                    "PYTHONPATH": python_path,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "ZHLINK_RECEIVER_DB": str(Path(tmp) / "receiver.sqlite3"),
+                },
+            )
+        self.assertIn("not found:", completed.stdout)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

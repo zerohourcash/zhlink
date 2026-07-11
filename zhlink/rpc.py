@@ -342,6 +342,8 @@ class ZHCashRPC:
             snapshot = await self.getbalance(address, force_refresh=True)
             snapshot["realtime"] = True
             snapshot["event"] = payload
+            if isinstance(payload.get("payload"), dict):
+                snapshot["source"] = payload["payload"].get("source")
         except Exception as exc:
             snapshot = {
                 "status": "error",

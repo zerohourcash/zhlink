@@ -16,6 +16,7 @@ ADMIN_GAS_WIF = os.environ.get("ZHLINK_ADMIN_GAS_WIF", "")
 MIN_USDZ = Decimal(os.environ.get("ZHLINK_MIN_USDZ", "0.00000001"))
 RUN_SERVICE = os.environ.get("RUN_USDZ_RECEIVER") == "1"
 RUN_REAL_SEND = os.environ.get("RUN_REAL_SEND") == "1"
+DELETE_AFTER_FORWARD = os.environ.get("ZHLINK_DELETE_AFTER_FORWARD") == "1"
 
 
 def connect() -> sqlite3.Connection:
@@ -91,6 +92,16 @@ def update_address(address: str, **fields) -> None:
         conn.commit()
 
 
+def delete_receiver_address(address: str) -> bool:
+    with closing(connect()) as conn:
+        cursor = conn.execute(
+            "DELETE FROM receiver_addresses WHERE address = ?",
+            (address,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig) -> None:
     address = row["address"]
     update_address(address, status="forwarding", last_usdz=str(usdz), error=None)
@@ -118,6 +129,9 @@ async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig)
             forward_txid=str(txid),
             error=None,
         )
+        if RUN_REAL_SEND and DELETE_AFTER_FORWARD:
+            delete_receiver_address(address)
+            print("receiver deleted after forward:", address)
         print("forward result:", address, result)
     except Exception as exc:
         update_address(address, status="error", last_usdz=str(usdz), error=str(exc))
@@ -127,14 +141,26 @@ async def forward_deposit(row: sqlite3.Row, usdz: Decimal, config: ZHLinkConfig)
 async def watch_receiver(row: sqlite3.Row, config: ZHLinkConfig) -> None:
     address = row["address"]
     print("watching:", address)
+    mempool_seen = False
     async for balance in watch_balance(address, config=config):
         if balance.get("status") == "error":
             print("watch error:", address, balance.get("reason"))
             continue
+        event = balance.get("realtime_event") or {}
+        event_payload = event.get("payload") if isinstance(event, dict) else {}
+        source = balance.get("realtime_source") or (
+            event_payload.get("source") if isinstance(event_payload, dict) else None
+        )
+        txid = event_payload.get("txid") if isinstance(event_payload, dict) else ""
+        if source == "mempool" and not mempool_seen:
+            mempool_seen = True
+            update_address(address, status="paid_mempool", error=None)
+            print("payment in mempool:", address, txid or "")
         usdz = Decimal(str(balance.get("usdz", "0")))
         update_address(address, last_usdz=str(usdz))
         print("receiver balance:", address, usdz, "USDZ")
         if usdz >= MIN_USDZ:
+            print("payment accepted:", address, usdz, "USDZ")
             await forward_deposit(row, usdz, config)
             return
 
@@ -173,9 +199,11 @@ async def service_loop() -> None:
 def print_usage() -> None:
     print("Usage:")
     print("  python examples/usdz_receiver_service.py new")
+    print("  python examples/usdz_receiver_service.py delete Z...")
     print("  RUN_USDZ_RECEIVER=1 ZHLINK_ADMIN_GAS_WIF=... python examples/usdz_receiver_service.py serve")
     print("")
     print("'new' creates exactly one receiver address on explicit request.")
+    print("'delete' removes a receiver address and its private key from the local SQLite state.")
     print("'serve' watches already-created active addresses and forwards deposits.")
 
 
@@ -185,6 +213,12 @@ if __name__ == "__main__":
         init_db()
         row = create_receiver_address()
         print("address:", row["address"])
+    elif command == "delete":
+        init_db()
+        if len(sys.argv) < 3:
+            raise SystemExit("Usage: python examples/usdz_receiver_service.py delete Z...")
+        deleted = delete_receiver_address(sys.argv[2])
+        print("deleted:" if deleted else "not found:", sys.argv[2])
     elif command == "serve":
         asyncio.run(service_loop())
     else:

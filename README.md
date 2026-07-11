@@ -287,6 +287,35 @@ The service does not pre-generate addresses. It only watches addresses that were
 created by explicit `new` requests. Receiver state is stored in
 `.zhlink-usdz-receiver.sqlite3` by default.
 
+To delete a receiver address and its private key from the local SQLite state:
+
+```bash
+python examples/usdz_receiver_service.py delete Z...
+```
+
+To delete receiver addresses automatically after a successful live forward:
+
+```bash
+ZHLINK_DELETE_AFTER_FORWARD=1 \
+RUN_USDZ_RECEIVER=1 \
+RUN_REAL_SEND=1 \
+ZHLINK_ADMIN_GAS_WIF="K-or-L-admin-gas-wif" \
+python examples/usdz_receiver_service.py serve
+```
+
+When a transaction touching the receiver address appears before confirmation,
+the service prints:
+
+```text
+payment in mempool: Z... txid
+```
+
+When USDZ is visible in confirmed contract state, the service prints:
+
+```text
+payment accepted: Z... 1.00000000 USDZ
+```
+
 ## Send ZHC
 
 ```python
