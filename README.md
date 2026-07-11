@@ -19,6 +19,23 @@ The library is async-first for long-running wallet apps: WSS is used as the
 primary realtime signal and automatically falls back to HTTP/RPC polling when
 WSS is unavailable. Synchronous wrappers are still provided for simple scripts.
 
+Main async/sync pairs:
+
+- `async_get_balance()` / `get_balance()`;
+- `async_force_refresh_balance()` / `force_refresh_balance()`;
+- `async_call_contract()` / `call_contract()`;
+- `async_send_zhc()` / `send_zhc()`;
+- `async_send_to_contract()` / `send_to_contract()`;
+- `async_send_usdz_gas_free()` / `send_usdz_gas_free()`;
+- `async_admin_gas_wallet_info()` / `admin_gas_wallet_info()`;
+- `async_estimate_mass_send()` / `estimate_mass_send()`;
+- `async_prepare_mass_send_utxos()` / `prepare_mass_send_utxos()`;
+- `async_wait_for_next_block()` / `wait_for_next_block()`;
+- `async_send_mass()` / `send_mass()`;
+- `async_create_and_forward_usdz_deposit()` / `create_and_forward_usdz_deposit()`;
+- `async_wait_for_usdz_deposit()` / `wait_for_usdz_deposit()`;
+- `async_forward_usdz_deposit()` / `forward_usdz_deposit()`.
+
 The raw transaction engine is bundled inside the package. Normal users only
 import `zhlink`.
 
@@ -642,7 +659,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.21`
+Current package version: `0.1.22`
 
 Release flow:
 

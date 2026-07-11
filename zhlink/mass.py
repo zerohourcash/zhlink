@@ -180,6 +180,22 @@ def estimate_mass_send(
     }
 
 
+async def async_estimate_mass_send(
+    private_key_wif: str,
+    plan: MassSendPlan | str | Path | Mapping[str, Any],
+    *,
+    config: ZHLinkConfig | None = None,
+) -> dict[str, Any]:
+    """Async version of ``estimate_mass_send``."""
+
+    return await asyncio.to_thread(
+        estimate_mass_send,
+        private_key_wif,
+        plan,
+        config=config,
+    )
+
+
 def _current_block(config: ZHLinkConfig) -> int:
     return int(_rpc_call(config, "getblockcount", []))
 
@@ -203,6 +219,24 @@ def wait_for_next_block(
         if time.time() - start > timeout_seconds:
             raise TimeoutError(f"timed out waiting for next block after {initial}")
         time.sleep(float(poll_seconds))
+
+
+async def async_wait_for_next_block(
+    *,
+    config: ZHLinkConfig | None = None,
+    from_height: int | None = None,
+    poll_seconds: float = DEFAULT_BLOCK_POLL_SECONDS,
+    timeout_seconds: float = 3600,
+) -> int:
+    """Async version of ``wait_for_next_block``."""
+
+    return await asyncio.to_thread(
+        wait_for_next_block,
+        config=config,
+        from_height=from_height,
+        poll_seconds=poll_seconds,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def prepare_mass_send_utxos(
@@ -277,6 +311,30 @@ def prepare_mass_send_utxos(
     if wait_confirmation:
         result["confirmed_height"] = wait_for_next_block(config=cfg, from_height=height_before)
     return result
+
+
+async def async_prepare_mass_send_utxos(
+    private_key_wif: str,
+    plan: MassSendPlan | str | Path | Mapping[str, Any],
+    *,
+    config: ZHLinkConfig | None = None,
+    target_utxos: int = DEFAULT_REORG_TARGET_UTXOS,
+    min_output_zhc: str | Decimal = DEFAULT_MIN_REORG_OUTPUT_ZHC,
+    wait_confirmation: bool = True,
+    broadcast: bool = True,
+) -> dict[str, Any]:
+    """Async version of ``prepare_mass_send_utxos``."""
+
+    return await asyncio.to_thread(
+        prepare_mass_send_utxos,
+        private_key_wif,
+        plan,
+        config=config,
+        target_utxos=target_utxos,
+        min_output_zhc=min_output_zhc,
+        wait_confirmation=wait_confirmation,
+        broadcast=broadcast,
+    )
 
 
 async def _send_mass_async(
@@ -386,12 +444,41 @@ def send_mass(
     least 1 ZHC, waits for confirmation, and then starts the mailing.
     """
 
+    cfg = config or ZHLinkConfig()
+    from .api import _run
+
+    result = _run(
+        async_send_mass(
+            private_key_wif,
+            plan,
+            config=cfg,
+            auto_prepare_utxos=auto_prepare_utxos,
+            batch_delay_seconds=batch_delay_seconds,
+            wait_between_batches=wait_between_batches,
+            max_batch_size=max_batch_size,
+        )
+    )
+    return result
+
+
+async def async_send_mass(
+    private_key_wif: str,
+    plan: MassSendPlan | str | Path | Mapping[str, Any],
+    *,
+    config: ZHLinkConfig | None = None,
+    auto_prepare_utxos: bool = True,
+    batch_delay_seconds: float = DEFAULT_BATCH_DELAY_SECONDS,
+    wait_between_batches: bool = True,
+    max_batch_size: int | None = None,
+) -> dict[str, Any]:
+    """Async version of ``send_mass``."""
+
     parsed = load_mass_send_plan(plan) if not isinstance(plan, MassSendPlan) else plan
     cfg = config or ZHLinkConfig()
-    estimate = estimate_mass_send(private_key_wif, parsed, config=cfg)
+    estimate = await async_estimate_mass_send(private_key_wif, parsed, config=cfg)
     prepare_result: dict[str, Any] | None = None
     if auto_prepare_utxos and estimate["need_reorg"]:
-        prepare_result = prepare_mass_send_utxos(
+        prepare_result = await async_prepare_mass_send_utxos(
             private_key_wif,
             parsed,
             config=cfg,
@@ -400,17 +487,13 @@ def send_mass(
             wait_confirmation=True,
             broadcast=True,
         )
-    from .api import _run
-
-    result = _run(
-        _send_mass_async(
-            private_key_wif,
-            parsed,
-            config=cfg,
-            batch_delay_seconds=batch_delay_seconds,
-            wait_between_batches=wait_between_batches,
-            max_batch_size=max_batch_size,
-        )
+    result = await _send_mass_async(
+        private_key_wif,
+        parsed,
+        config=cfg,
+        batch_delay_seconds=batch_delay_seconds,
+        wait_between_batches=wait_between_batches,
+        max_batch_size=max_batch_size,
     )
     result["initial_estimate"] = estimate
     if prepare_result is not None:
@@ -422,6 +505,10 @@ __all__ = [
     "MASS_SEND_TEMPLATE_NAMES",
     "MassRecipient",
     "MassSendPlan",
+    "async_estimate_mass_send",
+    "async_prepare_mass_send_utxos",
+    "async_send_mass",
+    "async_wait_for_next_block",
     "estimate_mass_send",
     "get_mass_send_template",
     "load_mass_send_plan",

@@ -617,6 +617,30 @@ def call_contract(
     return normalized
 
 
+async def async_call_contract(
+    contract_address: str,
+    data_hex: str = "",
+    *,
+    from_address: str | None = None,
+    gas: int = 1_000_000,
+    config: ZHLinkConfig | None = None,
+    allow_revert: bool = False,
+    require_bool_success: bool = False,
+) -> dict[str, Any]:
+    """Async version of ``call_contract``."""
+
+    return await asyncio.to_thread(
+        call_contract,
+        contract_address,
+        data_hex,
+        from_address=from_address,
+        gas=gas,
+        config=config,
+        allow_revert=allow_revert,
+        require_bool_success=require_bool_success,
+    )
+
+
 async def _send_to_contract_async(
     private_key_wif: str,
     contract_address: str,
@@ -766,6 +790,22 @@ def admin_gas_wallet_info(
     }
 
 
+async def async_admin_gas_wallet_info(
+    admin_private_key_wif: str,
+    *,
+    config: ZHLinkConfig | None = None,
+    store_path: str | Path = ".zhlink-gasfree-utxos.json",
+) -> dict[str, Any]:
+    """Async version of ``admin_gas_wallet_info``."""
+
+    return await asyncio.to_thread(
+        admin_gas_wallet_info,
+        admin_private_key_wif,
+        config=config,
+        store_path=store_path,
+    )
+
+
 def send_usdz_gas_free(
     sender_private_key_wif: str,
     admin_private_key_wif: str,
@@ -882,6 +922,8 @@ __all__ = [
     "Balance",
     "ZHLinkConfig",
     "admin_gas_wallet_info",
+    "async_admin_gas_wallet_info",
+    "async_call_contract",
     "async_force_refresh_balance",
     "async_get_balance",
     "async_send_to_contract",

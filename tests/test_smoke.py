@@ -431,13 +431,19 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "WaitNextBlockError",
                 "ZHLinkConfig",
                 "admin_gas_wallet_info",
+                "async_admin_gas_wallet_info",
+                "async_call_contract",
                 "async_create_and_forward_usdz_deposit",
+                "async_estimate_mass_send",
                 "async_force_refresh_balance",
                 "async_forward_usdz_deposit",
                 "async_get_balance",
+                "async_prepare_mass_send_utxos",
+                "async_send_mass",
                 "async_send_to_contract",
                 "async_send_usdz_gas_free",
                 "async_send_zhc",
+                "async_wait_for_next_block",
                 "async_wait_for_usdz_deposit",
                 "call_contract",
                 "create_address",
@@ -471,8 +477,18 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         )
         self.assertTrue(callable(zhlink.create_address))
         self.assertTrue(callable(zhlink.call_contract))
+        self.assertTrue(callable(zhlink.async_call_contract))
+        self.assertTrue(callable(zhlink.admin_gas_wallet_info))
+        self.assertTrue(callable(zhlink.async_admin_gas_wallet_info))
         self.assertTrue(callable(zhlink.send_to_contract))
         self.assertTrue(callable(zhlink.send_mass))
+        self.assertTrue(callable(zhlink.async_send_mass))
+        self.assertTrue(callable(zhlink.estimate_mass_send))
+        self.assertTrue(callable(zhlink.async_estimate_mass_send))
+        self.assertTrue(callable(zhlink.prepare_mass_send_utxos))
+        self.assertTrue(callable(zhlink.async_prepare_mass_send_utxos))
+        self.assertTrue(callable(zhlink.wait_for_next_block))
+        self.assertTrue(callable(zhlink.async_wait_for_next_block))
         self.assertTrue(callable(zhlink.get_mass_send_template))
         self.assertTrue(callable(zhlink.async_get_balance))
         self.assertTrue(callable(zhlink.watch_balance))
