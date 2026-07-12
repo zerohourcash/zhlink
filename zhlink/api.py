@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import _rawtx_bridge  # noqa: F401
-from .address import BitcoinAddress, WalletKey, create_wallet
+from .address import BitcoinAddress, WalletKey, create_wallet, is_valid_zhc_address, validate_zhc_address
 from .cache import SQLiteBalanceCache
 from .config import DEFAULT_USDZ_CONTRACT, ZHLinkConfig
 from zhc_rawtx import GasFreeStore, send_usdz_gas_freee  # type: ignore
@@ -36,15 +37,15 @@ class Balance:
     def as_dict(self) -> dict[str, Any]:
         data = {
             "address": self.address,
-            "zhc": str(self.zhc),
-            "usdz": str(self.usdz),
-            "tokens": {symbol: str(value) for symbol, value in self.tokens.items()},
+            "zhc": _decimal_string(self.zhc),
+            "usdz": _decimal_string(self.usdz),
+            "tokens": {symbol: _decimal_string(value) for symbol, value in self.tokens.items()},
             "utxo_count": self.utxo_count,
         }
         if self.confirmed_zhc is not None:
-            data["confirmed_zhc"] = str(self.confirmed_zhc)
+            data["confirmed_zhc"] = _decimal_string(self.confirmed_zhc)
         if self.pending_zhc is not None:
-            data["pending_zhc"] = str(self.pending_zhc)
+            data["pending_zhc"] = _decimal_string(self.pending_zhc)
         return data
 
 
@@ -57,6 +58,20 @@ def _run(coro):
         "zhlink sync API was called from a running asyncio loop. "
         "Use the async ZHCashRPC client directly in async applications."
     )
+
+
+def _decimal_string(value: Decimal) -> str:
+    return format(value, "f")
+
+
+def _cache_is_recent(payload: Mapping[str, Any], max_age_seconds: float) -> bool:
+    updated_at = payload.get("cache_updated_at")
+    if updated_at is None:
+        return False
+    try:
+        return time.time() - float(updated_at) <= float(max_age_seconds)
+    except Exception:
+        return False
 
 
 def _amount_raw(amount: str | int | float | Decimal, decimals: int = 8) -> int:
@@ -74,6 +89,18 @@ def _from_raw(value: int | str, decimals: int = 8) -> Decimal:
 
 def _address_from_wif(private_key_wif: str) -> str:
     return BitcoinAddress().address_from_wif(private_key_wif)
+
+
+def is_valid_address(address: str) -> bool:
+    """Return ``True`` when ``address`` is a valid ZHCASH address."""
+
+    return is_valid_zhc_address(address)
+
+
+def validate_address(address: str) -> str:
+    """Return a normalized ZHCASH address or raise ``ValueError``."""
+
+    return validate_zhc_address(address)
 
 
 def _requested_token_symbols(tokens: Mapping[str, str] | None) -> set[str]:
@@ -150,14 +177,15 @@ async def _get_balance_async(
     cfg = config or ZHLinkConfig()
     requested_symbols = _requested_token_symbols(tokens)
     cached = SQLiteBalanceCache(cfg.cache_path).get_balance(address)
-    if not force_refresh and cached:
+    cached_is_recent = bool(cached and _cache_is_recent(cached, cfg.force_refresh_seconds))
+    if not force_refresh and cached and cached_is_recent:
         cached_balance = _balance_from_cached_payload(address, cached, requested_symbols)
         if cached_balance is not None:
             return cached_balance
 
     client = ZHCashRPC(config)
     try:
-        base = await client.getbalance(address, force_refresh=force_refresh)
+        base = await client.getbalance(address, force_refresh=force_refresh or bool(cached and not cached_is_recent))
         if base.get("status") != "ok":
             raise RuntimeError(base.get("reason") or base)
         if base.get("cached") or base.get("throttled"):
@@ -1126,11 +1154,13 @@ __all__ = [
     "force_refresh_balance",
     "get_cached_balance",
     "get_balance",
+    "is_valid_address",
     "new_wallet",
     "send_to_contract",
     "send_zhc",
     "send_usdz_gas_free",
     "send_usdz_free",
     "send_zrc20_token",
+    "validate_address",
     "watch_balance",
 ]

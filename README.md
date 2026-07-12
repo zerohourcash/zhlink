@@ -1,12 +1,13 @@
 # ZHLink Python Library
 
-[![PyPI version](https://img.shields.io/badge/PyPI-0.1.28-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
+[![PyPI version](https://img.shields.io/badge/PyPI-0.1.29-blue.svg?cacheSeconds=300)](https://pypi.org/project/zhlink/)
 
 `zhlink` is a self-contained Python library for ZHCASH.
 
 It is designed so a beginner can start with a few functions:
 
 - `new_wallet()` - create a local ZHC wallet;
+- `is_valid_address(address)` / `validate_address(address)` - validate user-entered ZHC addresses locally;
 - `balance(address)` - read ZHC and USDZ balance;
 - `send_zhc(private_key_wif, to_address, amount)` - send native ZHC;
 - `send_zrc20_token(private_key_wif, token_contract, to_address, amount)` - send a ZRC-20 token;
@@ -253,9 +254,13 @@ print(wallet.private_key_wif)
 By default `get_balance` returns ZHC and USDZ.
 
 ```python
-from zhlink import get_balance
+from zhlink import get_balance, is_valid_address
 
-balance = get_balance("Z...")
+address = "Z..."
+if not is_valid_address(address):
+    raise ValueError("Invalid ZHC address")
+
+balance = get_balance(address)
 
 print(balance["zhc"])
 print(balance.get("confirmed_zhc"))
@@ -263,10 +268,31 @@ print(balance.get("pending_zhc"))
 print(balance["usdz"])
 ```
 
+Balances are returned as fixed decimal strings such as `"0.00000000"` or
+`"1.10000000"`. The normal balance call uses a short SQLite cache to avoid
+hammering ZeroScan/RPC. Use `force_refresh_balance()` or
+`async_force_refresh_balance()` when the UI needs an immediate re-check after a
+deposit.
+
 `zhc` is the visible balance. When ZeroScan exposes pending data, positive
 0-confirmation change is included in `zhc`, while `confirmed_zhc` and
 `pending_zhc` are also returned separately. Sending still uses only confirmed
 spendable UTXO.
+
+### Validate Address
+
+Address validation is local Base58Check validation with ZHCASH network bytes.
+It does not call RPC and does not send the checked address anywhere.
+
+```python
+from zhlink import is_valid_address, validate_address
+
+if is_valid_address("ZRtWACtC9WvJLYMTC36ebbGo8EiTRumL9e"):
+    print("ok")
+
+normalized = validate_address("  ZRtWACtC9WvJLYMTC36ebbGo8EiTRumL9e  ")
+print(normalized)
+```
 
 Extra ZRC-20 tokens can be requested when needed:
 
@@ -773,7 +799,7 @@ Never commit real private keys.
 GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
 checks, and publishes the package to PyPI.
 
-Current package version: `0.1.28`
+Current package version: `0.1.29`
 
 Release flow:
 

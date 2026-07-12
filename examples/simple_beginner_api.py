@@ -56,6 +56,9 @@ def balance_example() -> None:
     if BALANCE_ADDRESS == "Z...":
         print("Edit BALANCE_ADDRESS to run a real balance request.")
         return
+    if not zhlink.is_valid_address(BALANCE_ADDRESS):
+        print("Invalid ZHC address.")
+        return
     pprint(zhlink.balance(BALANCE_ADDRESS))
 
 

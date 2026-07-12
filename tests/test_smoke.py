@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from zhlink.address import BitcoinAddress
+from zhlink.address import is_valid_zhc_address, validate_zhc_address
 from zhlink.config import (
     DEFAULT_USDZ_CONTRACT,
     TEST_GASFREE_ADMIN_ADDRESS,
@@ -131,6 +132,15 @@ class ZhlinkLibAddressAndSignerTests(unittest.TestCase):
         self.assertEqual(generated["status"], "ok")
         self.assertTrue(generated["address"].startswith("Z"))
         self.assertEqual(helper.address_from_wif(generated["priv_key"]), generated["address"])
+
+    def test_local_zhc_address_validation(self) -> None:
+        self.assertTrue(is_valid_zhc_address(RECIPIENT_ADDRESS))
+        self.assertEqual(validate_zhc_address(f"  {RECIPIENT_ADDRESS}  "), RECIPIENT_ADDRESS)
+        self.assertFalse(is_valid_zhc_address(ADMIN_WIF))
+        self.assertFalse(is_valid_zhc_address("11" * 32))
+        self.assertFalse(is_valid_zhc_address("not a zhc address"))
+        with self.assertRaises(ValueError):
+            validate_zhc_address("not a zhc address")
 
     def test_rejects_non_zhc_network_constants(self) -> None:
         with self.assertRaises(ValueError):
@@ -309,17 +319,72 @@ class ZhlinkLibUtxoMaintenanceTests(unittest.TestCase):
     def test_balance_dict_can_expose_confirmed_and_pending(self) -> None:
         balance = Balance(
             address=ADMIN_ADDRESS,
-            zhc=Decimal("1.50000000"),
+            zhc=Decimal("0E-8"),
             confirmed_zhc=Decimal("1.00000000"),
             pending_zhc=Decimal("0.50000000"),
-            usdz=Decimal("2.00000000"),
-            tokens={"USDZ": Decimal("2.00000000")},
+            usdz=Decimal("0E-8"),
+            tokens={"USDZ": Decimal("0E-8")},
             utxo_count=1,
         ).as_dict()
 
-        self.assertEqual(balance["zhc"], "1.50000000")
+        self.assertEqual(balance["zhc"], "0.00000000")
+        self.assertEqual(balance["usdz"], "0.00000000")
+        self.assertEqual(balance["tokens"]["USDZ"], "0.00000000")
         self.assertEqual(balance["confirmed_zhc"], "1.00000000")
         self.assertEqual(balance["pending_zhc"], "0.50000000")
+
+    def test_async_get_balance_refreshes_expired_token_cache(self) -> None:
+        import zhlink.api as api
+        import zhlink.rpc as rpc
+
+        class FakeRpc:
+            def __init__(self, config):
+                self.sqlite_cache = SQLiteBalanceCache(config.cache_path)
+
+            async def getbalance(self, address, force_refresh=False):
+                self.force_refresh = force_refresh
+                return {
+                    "status": "ok",
+                    "balance": "0.00000000",
+                    "confirmed_balance": "0.00000000",
+                    "pending_balance": "0.00000000",
+                    "utxo_len": 0,
+                    "height": 123,
+                    "cached": False,
+                }
+
+            async def get_zrc20_balance_raw(self, contract, address):
+                self.last_contract = contract
+                return 110000000
+
+            async def close(self):
+                return None
+
+        async def run() -> dict:
+            with tempfile.TemporaryDirectory() as tmp:
+                cfg = ZHLinkConfig(cache_path=str(Path(tmp) / "cache.sqlite3"), force_refresh_seconds=-1)
+                cache = SQLiteBalanceCache(cfg.cache_path)
+                cache.put_balance(
+                    RECIPIENT_ADDRESS,
+                    {
+                        "status": "ok",
+                        "zhc": "0.00000000",
+                        "usdz": "0.00000000",
+                        "tokens": {"USDZ": "0.00000000"},
+                        "utxo_count": 0,
+                    },
+                    122,
+                )
+                original = rpc.ZHCashRPC
+                rpc.ZHCashRPC = FakeRpc
+                try:
+                    return await api.async_get_balance(RECIPIENT_ADDRESS, config=cfg)
+                finally:
+                    rpc.ZHCashRPC = original
+
+        balance = asyncio.run(run())
+        self.assertEqual(balance["usdz"], "1.10000000")
+        self.assertEqual(balance["tokens"]["USDZ"], "1.10000000")
 
     def test_sqlite_balance_cache_stores_snapshots_and_throttles_force_refresh(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -512,6 +577,8 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "get_balance",
                 "get_cached_balance",
                 "get_mass_send_template",
+                "is_valid_address",
+                "is_valid_zhc_address",
                 "load_mass_send_plan",
                 "load_zhc_seed_config",
                 "new_seed_config",
@@ -528,7 +595,9 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
                 "send_zhc",
                 "send_zrc20_token",
                 "usdz_receiver_status",
+                "validate_address",
                 "validate_bip39_mnemonic",
+                "validate_zhc_address",
                 "wait_for_next_block",
                 "wait_for_usdz_deposit",
                 "watch_balance",

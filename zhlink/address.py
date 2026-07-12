@@ -10,6 +10,7 @@ from zhc_rawtx.core import (  # type: ignore
     SECP256K1_ORDER,
     ZHC,
     address_from_pubkey,
+    b58decode_check,
     b58encode_check,
     compressed_pubkey,
     decode_wif,
@@ -28,6 +29,35 @@ class WalletKey:
         """Alias used by the beginner-friendly public API."""
 
         return self.priv_key
+
+
+def validate_zhc_address(address: str) -> str:
+    """Return a normalized ZHCASH Base58Check address or raise ``ValueError``.
+
+    This is a local validation helper. It does not call RPC and it does not
+    reveal the checked address to any external service.
+    """
+
+    normalized = str(address or "").strip()
+    if not normalized:
+        raise ValueError("ZHCASH address is empty")
+    raw = b58decode_check(normalized)
+    if len(raw) != 21:
+        raise ValueError("ZHCASH address payload must be 21 bytes")
+    version = raw[0]
+    if version not in (ZHC.pubkey_hash, ZHC.script_hash):
+        raise ValueError("address is not a ZHCASH network address")
+    return normalized
+
+
+def is_valid_zhc_address(address: str) -> bool:
+    """Return ``True`` when ``address`` is a valid ZHCASH Base58Check address."""
+
+    try:
+        validate_zhc_address(address)
+        return True
+    except Exception:
+        return False
 
 
 def _wif_from_private_number(number: int, compressed: bool = True) -> str:

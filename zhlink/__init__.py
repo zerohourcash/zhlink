@@ -22,13 +22,19 @@ from .api import (
     force_refresh_balance,
     get_cached_balance,
     get_balance,
+    is_valid_address,
     new_wallet,
     send_to_contract,
     send_zhc,
     send_usdz_gas_free,
     send_usdz_free,
     send_zrc20_token,
+    validate_address,
     watch_balance,
+)
+from .address import (
+    is_valid_zhc_address,
+    validate_zhc_address,
 )
 from .config import (
     ZHLinkConfig,
@@ -141,6 +147,8 @@ __all__ = [
     "force_refresh_balance",
     "get_cached_balance",
     "get_balance",
+    "is_valid_address",
+    "is_valid_zhc_address",
     "load_mass_send_plan",
     "load_zhc_seed_config",
     "new_seed_config",
@@ -157,7 +165,9 @@ __all__ = [
     "send_zrc20_token",
     "run_usdz_receiver",
     "usdz_receiver_status",
+    "validate_address",
     "validate_bip39_mnemonic",
+    "validate_zhc_address",
     "wait_for_next_block",
     "wait_for_usdz_deposit",
     "watch_balance",
