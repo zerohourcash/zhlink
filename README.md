@@ -796,23 +796,190 @@ Never commit real private keys.
 
 ## Publishing
 
-GitHub Actions workflow `.github/workflows/python-publish.yml` builds, tests,
-checks, and publishes the package to PyPI.
+The distribution name is `zhlink`. Its version is defined only in
+`pyproject.toml`.
 
 Current package version: `0.1.29`
 
-Release flow:
+PyPI release files are immutable, so every retry that changes an artifact
+requires a new version.
 
-1. Make sure `pyproject.toml` contains the version you want to publish.
-2. Sync the README version line.
-3. Create and push a tag from that version:
+### Release prerequisites
+
+- Use Python `3.10+` and release from a clean, reviewed `main` branch.
+- Have maintainer access to the `zhlink` projects on PyPI and, when testing the
+  manual flow, TestPyPI. TestPyPI uses a separate account and token.
+- Enable 2FA on the maintainer account.
+- Prefer PyPI Trusted Publishing. Do not save a PyPI token in this repository,
+  a remote URL, `.env`, shell history, or a CI secret when OIDC is available.
+- Confirm that source, examples, tests, sdist, and wheel contain no real WIF,
+  seed phrase, private key, certificate, API token, password, or runtime cache.
+
+Create an isolated release environment:
 
 ```bash
-python3 scripts/sync_readme_version.py
-VERSION=$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)
-git tag "v$VERSION"
+cd /root/wallet/zhlink
+python3 -m venv .venv-release
+. .venv-release/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[test,release]'
+```
+
+### Prepare the version
+
+1. Choose a version that does not already exist on PyPI.
+2. Update `version` in `pyproject.toml`.
+3. Synchronize the version shown in this README.
+4. Review the resulting diff and commit it before tagging.
+
+```bash
+python scripts/sync_readme_version.py
+VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+git diff --check
+git diff -- pyproject.toml README.md
+git status --short
+```
+
+The version must be a valid Python package version and the tag must be exactly
+`v$VERSION`. Do not tag a dirty working tree.
+
+### Test and build clean artifacts
+
+Run the complete offline unit suite first:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Remove artifacts from previous versions, build both sdist and wheel, and check
+their metadata:
+
+```bash
+rm -rf -- dist build zhlink.egg-info
+python -m build
+python -m twine check dist/*
+ls -lh dist/
+```
+
+The expected files are:
+
+```text
+dist/zhlink-${VERSION}.tar.gz
+dist/zhlink-${VERSION}-py3-none-any.whl
+```
+
+Inspect the actual payload before uploading:
+
+```bash
+tar -tzf "dist/zhlink-${VERSION}.tar.gz" | less
+python -m zipfile -l "dist/zhlink-${VERSION}-py3-none-any.whl"
+```
+
+Install the wheel into a second clean virtual environment and verify that its
+metadata and imports work without the source checkout:
+
+```bash
+python3 -m venv /tmp/zhlink-release-check
+/tmp/zhlink-release-check/bin/python -m pip install --upgrade pip
+/tmp/zhlink-release-check/bin/python -m pip install "dist/zhlink-${VERSION}-py3-none-any.whl"
+cd /tmp
+/tmp/zhlink-release-check/bin/python -c 'import importlib.metadata, zhlink; print(importlib.metadata.version("zhlink")); print(zhlink.__file__)'
+cd /root/wallet/zhlink
+```
+
+### TestPyPI dry run
+
+TestPyPI is recommended before the first publication or after packaging changes.
+Create a separate TestPyPI project/token, then upload without placing the token
+on the command line:
+
+```bash
+python -m twine upload --repository testpypi dist/*
+```
+
+When prompted, use username `__token__` and paste the complete TestPyPI token as
+the password. Test the published wheel in another clean environment. The extra
+PyPI index is needed because TestPyPI may not contain all dependencies:
+
+```bash
+python3 -m venv /tmp/zhlink-testpypi-check
+/tmp/zhlink-testpypi-check/bin/python -m pip install --upgrade pip
+/tmp/zhlink-testpypi-check/bin/python -m pip install \
+  --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ \
+  --no-cache-dir "zhlink==$VERSION"
+/tmp/zhlink-testpypi-check/bin/python -c 'import importlib.metadata, zhlink; print(importlib.metadata.version("zhlink"))'
+```
+
+### Preferred production release: Trusted Publishing
+
+The workflow `.github/workflows/python-publish.yml` runs on tags matching `v*`,
+tests the package, builds fresh distributions, checks them, and publishes with
+PyPI OIDC Trusted Publishing. It does not need a long-lived PyPI token.
+
+Configure the publisher once in the PyPI project under `Manage` → `Publishing`:
+
+- owner: `zerohourcash`;
+- repository: `zhlink`;
+- workflow: `python-publish.yml`;
+- environment: `pypi`.
+
+The values on PyPI must match the GitHub repository, workflow filename, and
+environment exactly. Configure the `pypi` GitHub environment with required
+reviewers when available.
+
+Commit the prepared release, push `main`, create an annotated tag on that exact
+commit, and push only that tag:
+
+```bash
+git add pyproject.toml README.md
+git commit -m "release: zhlink $VERSION"
+git push origin main
+git tag -a "v$VERSION" -m "zhlink $VERSION"
+test "$(git rev-parse "v$VERSION^{commit}")" = "$(git rev-parse HEAD)"
 git push origin "v$VERSION"
 ```
 
-The workflow uses PyPI Trusted Publishing. The PyPI project must allow this
-GitHub repository and workflow as a trusted publisher.
+Watch the GitHub Actions release job through completion. Do not run the manual
+production upload at the same time.
+
+### Manual production upload
+
+Use this only when Trusted Publishing is unavailable. Create a project-scoped
+PyPI token, run the upload interactively, and revoke the token after use:
+
+```bash
+python -m twine upload dist/*
+```
+
+When prompted, use username `__token__` and the complete production PyPI token
+as the password. Never pass the token directly in the command or commit a
+`.pypirc` containing it.
+
+### Verify the PyPI release
+
+Wait for the project page and simple index to update, then install from PyPI
+without using local caches:
+
+```bash
+python3 -m venv /tmp/zhlink-pypi-check
+/tmp/zhlink-pypi-check/bin/python -m pip install --upgrade pip
+/tmp/zhlink-pypi-check/bin/python -m pip install \
+  --index-url https://pypi.org/simple/ \
+  --no-cache-dir "zhlink==$VERSION"
+/tmp/zhlink-pypi-check/bin/python -c 'import importlib.metadata, zhlink; print(importlib.metadata.version("zhlink")); print(zhlink.__file__)'
+```
+
+Verify that the printed version equals `$VERSION`, review the files and project
+metadata on `https://pypi.org/project/zhlink/$VERSION/`, and run one read-only
+library example. Transaction-sending examples are not release smoke tests.
+
+If a bad release was uploaded, do not try to overwrite it. Yank it in the PyPI
+project UI, fix the package, increment the version, rebuild from a clean tree,
+and publish a new release.
+
+Official references:
+
+- [PyPA packaging tutorial](https://packaging.python.org/en/latest/tutorials/packaging-projects/)
+- [PyPA TestPyPI guide](https://packaging.python.org/en/latest/guides/using-testpypi/)
+- [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)

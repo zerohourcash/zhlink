@@ -19,6 +19,15 @@ authors = [
   { name = "ZHCASH" },
 ]
 
+[project.optional-dependencies]
+test = [
+  "tomli>=2.0; python_version < '3.11'",
+]
+release = [
+  "build>=1.2",
+  "twine>=5",
+]
+
 [tool.setuptools]
 include-package-data = true
 

@@ -5,19 +5,21 @@ import os
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unittest
 import asyncio
 import time
 from decimal import Decimal
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 from zhlink.address import BitcoinAddress
 from zhlink.address import is_valid_zhc_address, validate_zhc_address
 from zhlink.config import (
     DEFAULT_USDZ_CONTRACT,
-    TEST_GASFREE_ADMIN_ADDRESS,
-    TEST_GASFREE_ADMIN_PRIVATE_KEY,
     ZHLinkConfig,
 )
 from zhlink.api import Balance
@@ -43,11 +45,19 @@ from zhlink.realtime import ZeroScanWebSocketHub, get_realtime_hub
 from zhlink.zeroscan import ZeroScanRPC
 from zhc_rawtx import ZHC
 from zhc_rawtx import GasFreeStore, consolidate_utxos, send_usdz_gas_freee, split_largest_utxo
-from zhc_rawtx.core import compressed_pubkey, p2pkh_script_pubkey, private_key_from_wif, serialize_tx
+from zhc_rawtx.core import (
+    b58encode_check,
+    compressed_pubkey,
+    p2pkh_script_pubkey,
+    private_key_from_wif,
+    serialize_tx,
+)
 
 
-ADMIN_WIF = TEST_GASFREE_ADMIN_PRIVATE_KEY
-ADMIN_ADDRESS = TEST_GASFREE_ADMIN_ADDRESS
+# Deterministic public test fixture derived from the scalar 1. It has no funds
+# and must never be used outside tests.
+ADMIN_WIF = b58encode_check(bytes([ZHC.wif]) + (1).to_bytes(32, "big") + b"\x01")
+ADMIN_ADDRESS = BitcoinAddress().address_from_wif(ADMIN_WIF)
 RECIPIENT_ADDRESS = "ZGqDPGCds5CBRHLZZCnYWsYWYPF3i9NCvi"
 ADMIN_SCRIPT = p2pkh_script_pubkey(ADMIN_ADDRESS, ZHC).hex()
 

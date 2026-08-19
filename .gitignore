@@ -12,6 +12,16 @@ build/
 .production-gasfree-utxos.json
 *.log
 
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_private_key
+*_wif
+*_seed
+
 # zhlink runtime cache
 .zhlink-cache.sqlite3
 *.sqlite3
