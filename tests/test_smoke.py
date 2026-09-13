@@ -735,6 +735,43 @@ class ZhlinkLibPublicApiAndExamplesTests(unittest.TestCase):
         self.assertEqual(result["gas_used"], 12345)
         self.assertEqual(result["output"], "0" * 63 + "1")
 
+    def test_ok_contract_info_is_decoded_as_eight_decimal_values(self) -> None:
+        """The OK DeFi summary must be readable through zhlink callcontract."""
+        import zhlink.api as api
+
+        contract = "e66c1aeba394ccda63c7644d68b4c771ef6548d9"
+        words = [
+            64439507207882533,
+            30329581412467293,
+            212464215,
+            1695274,
+            1789305672,
+            1,
+            975240,
+        ]
+        output = "".join(f"{word:064x}" for word in words)
+        original = api._rpc_call
+
+        def fake_rpc_call(config, method, params):
+            self.assertEqual(method, "callcontract")
+            self.assertEqual(params[:2], [contract, "370158ea"])
+            return {"executionResult": {"output": output, "excepted": "None"}}
+
+        api._rpc_call = fake_rpc_call
+        try:
+            result = api.call_contract(contract, "0x370158ea")
+        finally:
+            api._rpc_call = original
+
+        decoded = [
+            int(result["output"][offset : offset + 64], 16)
+            for offset in range(0, len(result["output"]), 64)
+        ]
+        self.assertEqual(len(decoded), 7)
+        self.assertEqual(Decimal(decoded[0]) / Decimal(10**8), Decimal("644395072.07882533"))
+        self.assertEqual(Decimal(decoded[1]) / Decimal(10**8), Decimal("303295814.12467293"))
+        self.assertEqual(Decimal(decoded[2]) / Decimal(10**8), Decimal("2.12464215"))
+
     def test_mass_send_plan_and_utxo_estimate(self) -> None:
         import zhlink.mass as mass
 
