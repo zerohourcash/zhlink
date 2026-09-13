@@ -618,6 +618,74 @@ only suitable gas UTXO is already reserved by a pending local transaction, it
 returns `action_required: "wait_next_block"` instead of sending a broken
 contract transaction.
 
+### Read the OK DeFi contract
+
+The OK contract is a ZHCASH ZRC-20 contract. Its public `info()` method
+returns seven ABI `uint256` values. The first three are the values displayed
+in DeFi OK:
+
+```text
+info[0] — pool balance (raw ZHC)
+info[1] — total supply (raw token units)
+info[2] — price (raw value)
+```
+
+All three use 8 decimals. `info()` has selector `370158ea` (the first four
+bytes of `keccak256("info()")`). This is a read-only call and does not require
+a private key or a transaction:
+
+```python
+from decimal import Decimal
+
+from zhlink import call_contract
+
+OK_CONTRACT = "e66c1aeba394ccda63c7644d68b4c771ef6548d9"
+
+result = call_contract(
+    contract_address=OK_CONTRACT,
+    data_hex="370158ea",
+    gas=1_000_000,
+)
+
+if result["status"] != "ok":
+    raise RuntimeError(result)
+
+output = result["output"].removeprefix("0x")
+words = [
+    int(output[offset:offset + 64], 16)
+    for offset in range(0, len(output), 64)
+]
+
+if len(words) < 3:
+    raise RuntimeError(f"Unexpected info() output: {len(words)} words")
+
+pool_balance = Decimal(words[0]) / Decimal(10**8)
+total_supply = Decimal(words[1]) / Decimal(10**8)
+price = Decimal(words[2]) / Decimal(10**8)
+
+print("Pool balance:", pool_balance, "ZHC")
+print("Total supply:", total_supply)
+print("Price:", price, "ZHC")
+print("All info() values:", words)
+```
+
+The holder count is indexed off-chain and is not stored in `info()`. Read it
+from the ZeroScan contract endpoint when needed:
+
+```python
+import requests
+
+metadata = requests.get(
+    f"https://zeroscan.st/api/contract/{OK_CONTRACT}",
+    timeout=10,
+).json()
+holders = metadata.get("zrc20", {}).get("holders", 0)
+print("Holders:", holders)
+```
+
+For example, the complete OK summary combines `pool_balance`, `total_supply`
+and `price` from `callcontract` with `holders` from the indexed metadata API.
+
 ## Mass Send
 
 `send_mass` sends ZHC, USDZ or any ZRC-20 token to many recipients from a JSON
